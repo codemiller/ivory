@@ -5,13 +5,16 @@ import com.ambiata.mundane.parse.ListParser
 import com.ambiata.mundane.io.FilePath
 import scalaz._, Scalaz._
 
-case class Factset(id: FactsetId, partitions: Partitions) {
+case class Factset(id: FactsetId, partitions: List[Partition]) {
   def show =
     s"""
        |Factset: $id
        |Partitions:
-       |  ${partitions.show}
+       |  ${partitions.mkString("\n", "\n", "\n")}
      """.stripMargin
+
+  def filter(pred: Partition => Boolean): Factset =
+    Factset(id, partitions.filter(pred))
 }
 
 object Factset {

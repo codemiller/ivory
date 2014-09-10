@@ -33,5 +33,5 @@ object Factsets {
   def factset(repo: Repository, id: FactsetId): ResultTIO[Factset] = for {
     files      <- repo.toStore.list(Repository.factset(id)).map(_.filterHidden)
     partitions <- ResultT.fromDisjunction[IO, List[Partition]](files.traverseU(Partition.parseFile).disjunction.leftMap(This.apply))
-  } yield Factset(id, Partitions(partitions.sorted))
+  } yield Factset(id, partitions.sorted)
 }

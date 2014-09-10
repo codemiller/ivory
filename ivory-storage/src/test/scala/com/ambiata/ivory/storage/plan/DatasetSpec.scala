@@ -1,4 +1,4 @@
-package com.ambiata.ivory.storage.plan
+/*package com.ambiata.ivory.storage.plan
 
 import com.ambiata.ivory.core._
 
@@ -46,3 +46,4 @@ object DatasetSpec extends Specification with ScalaCheck { def is = s2"""
     dataset.filter(_.namespace == ns.namespace) must_== expected
   })
 }
+*/

@@ -32,11 +32,6 @@ Can create a Partition path as a:
   FilePath                $filePath
   String                  $stringPath
 
-Can filter Partitions:
-  Between two dates       $between
-  Before a date           $before
-  After a date            $after
-
 """
 
   case class MalformedDateString(date: String)
@@ -86,20 +81,4 @@ Can filter Partitions:
 
   def stringPath = prop((p: Partition) =>
     Partition.stringPath(p.namespace.name, p.date) ==== s"${p.namespace.name}/${p.date.slashed}")
-
-  def between = prop((partitions: Partitions, dates: TwoDifferentDates) => {
-    val ps = partitions.partitions
-    val expected = ps.filter(p => p.date.isAfterOrEqual(dates.earlier) && p.date.isBeforeOrEqual(dates.later))
-    Partitions.pathsBetween(ps, dates.earlier, dates.later) must_== expected
-  })
-
-  def before = prop((partitions: Partitions, date: Date) => {
-    val ps = partitions.partitions
-    Partitions.pathsBeforeOrEqual(ps, date) must_== ps.filter(_.date.isBeforeOrEqual(date))
-  })
-
-  def after = prop((partitions: Partitions, date: Date) => {
-    val ps = partitions.partitions
-    Partitions.pathsAfterOrEqual(ps, date) must_== ps.filter(_.date.isAfterOrEqual(date))
-  })
 }

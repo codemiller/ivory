@@ -33,10 +33,10 @@ import scalaz.{DList => _, _}, Scalaz._, effect._
  *
  * Note that in between 2 snapshots, the FeatureStore might have changed
  */
-object Snapshot {
+object Snapshots {
   private implicit val logger = LogFactory.getLog("ivory.operation.Snapshot")
 
-  /** 
+  /**
    * Take a new snapshot
    * If incremental is true, take a incremental snapshot (based off the previous one), unless the previous one is up to date
    */

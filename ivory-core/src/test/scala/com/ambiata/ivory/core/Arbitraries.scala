@@ -315,9 +315,16 @@ object Arbitraries extends arbitraries.ArbitrariesDictionary {
   implicit def FactsetIdListArbitrary: Arbitrary[FactsetIdList] =
     Arbitrary(genFactsetIds(Gen.choose(0, 10)).map(FactsetIdList.apply))
 
+  implicit def SnapshotArbitrary: Arbitrary[Snapshot] =
+    Arbitrary(for {
+      id <- arbitrary[SnapshotId]
+      d  <- arbitrary[Date]
+      fs <- arbitrary[FeatureStore]
+    } yield Snapshot(id, d, fs))
+
   /* Generate a Factset with number of partitions up to n namespaces x n dates */
   def genFactset(factsetId: FactsetId, nNamespaces: Gen[Int], nDates: Gen[Int]): Gen[Factset] =
-    genPartitions(nNamespaces, nDates).map(ps => Factset(factsetId, ps))
+    genPartitions(nNamespaces, nDates).map(ps => Factset(factsetId, ps.partitions))
 
   /* Factset with up to 3 x 3 partitions */
   implicit def FactsetArbitrary: Arbitrary[Factset] =
@@ -347,6 +354,8 @@ object Arbitraries extends arbitraries.ArbitrariesDictionary {
     namespaces <- genFeatureNamespaces(nNamespaces)
     partitions <- namespaces.traverse(ns => genDates(nDates).map(_.map(d => Partition(ns.namespace, d))))
   } yield Partitions(partitions.flatten)
+
+  case class Partitions(partitions: List[Partition])
 
   /* Partitions with size up to 3 x 5 */
   implicit def PartitionsArbitrary: Arbitrary[Partitions] =

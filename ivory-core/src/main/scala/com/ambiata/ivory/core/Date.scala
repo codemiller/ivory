@@ -37,10 +37,10 @@ class Date private(val underlying: Int) extends AnyVal {
     int <= other.int
 
   def isAfter(other: Date): Boolean =
-  int > other.int
+    int > other.int
 
   def isAfterOrEqual(other: Date): Boolean =
-  int >= other.int
+    int >= other.int
 
   def addTime(t: Time): DateTime =
     DateTime.unsafeFromLong(int.toLong << 32 | t.seconds)

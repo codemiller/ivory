@@ -26,14 +26,14 @@ import scala.collection.JavaConversions._
 
 /**
  * A Chord is the extraction of feature values for some entities at some dates
- * 
+ *
  * Use the latest snapshot (if available) to get the latest values
  */
 object Chord {
   private implicit val logger = LogFactory.getLog("ivory.operation.Snapshot")
 
   type PrioritizedFact = (Priority, Fact)
-  
+
   /**
    * Create a chord from a list of entities
    * If takeSnapshot = true, take a snapshot first, otherwise use the latest available snapshot
@@ -47,7 +47,7 @@ object Chord {
     _                   <- logInfo(s"Earliest date in chord file is '${entities.earliestDate}'")
     _                   <- logInfo(s"Latest date in chord file is '${entities.latestDate}'")
     store               <- Metadata.latestFeatureStoreOrFail(repository)
-    snapshot            <- if (takeSnapshot) Snapshot.takeSnapshot(repository, entities.earliestDate, incremental = true).map(Option.apply)
+    snapshot            <- if (takeSnapshot) Snapshots.takeSnapshot(repository, entities.earliestDate, incremental = true).map(Option.apply)
                            else              SnapshotMeta.latestSnapshot(repository, entities.earliestDate)
     _                   <- runChordOnHdfs(repository, store, entities, outputRef, tmp, snapshot)
     _                   <- storeDictionary(repository, outputRef)
@@ -179,7 +179,7 @@ object Chord {
   implicit class ScoobiParsedListExitOps[A : WireFormat](action: ScoobiAction[DList[ParseError \/ A]]) {
     def exitOnParseError: ScoobiAction[DList[A]] = action.failError("cannot read facts")
   }
-  
+
   implicit class ScoobiParsedListFailOps[E, A : WireFormat](action: ScoobiAction[DList[E \/ A]]) {
     def failError(message: String): ScoobiAction[DList[A]] =
       action.map { list =>

@@ -12,6 +12,7 @@ import com.ambiata.mundane.parse.ListParser
 
 import scalaz._, Scalaz._, \&/._, effect.IO
 
+// FIX MTH rename and move to core.
 case class SnapshotMeta(snapshotId: SnapshotId, date: Date, featureStoreId: FeatureStoreId) {
 
   def toReference(ref: ReferenceIO): ResultTIO[Unit] =
@@ -118,7 +119,7 @@ object SnapshotMeta {
     filtered =  metas.flatten.filter(_.date isBeforeOrEqual date)
   } yield filtered.sorted.lastOption
 
-  /** 
+  /**
    * A snapshot is up to date if:
    *
    */
@@ -128,5 +129,5 @@ object SnapshotMeta {
    */
   def save(snapshotMeta: SnapshotMeta, output: ReferenceIO): ResultTIO[Unit] =
     snapshotMeta.toReference(output </> SnapshotMeta.fname)
-  
+
 }

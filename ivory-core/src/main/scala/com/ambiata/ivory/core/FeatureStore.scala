@@ -5,9 +5,11 @@ case class FeatureStore(id: FeatureStoreId, factsets: List[Prioritized[Factset]]
   def factsetIds: List[Prioritized[FactsetId]] =
     factsets.map(_.map(_.id))
 
+  // FIX what is this? no.get
   def filter(f: Factset => Boolean): FeatureStore =
     FeatureStore.fromList(id, factsets.collect({ case Prioritized(_, factset) if f(factset) => factset })).get
 
+  // FIX what is this? no .get
   def diff(other: FeatureStore): FeatureStore =
     FeatureStore.fromList(id, factsets.map(_.value).diff(other.factsets.map(_.value))).get
 }

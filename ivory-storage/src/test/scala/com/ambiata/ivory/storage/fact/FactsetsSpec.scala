@@ -31,7 +31,7 @@ object FactsetsSpec extends Specification with ScalaCheck { def is = s2"""
     }
   }
 
-  def allocate = prop { factsetId: FactsetId => 
+  def allocate = prop { factsetId: FactsetId =>
     withRepository { repo =>
       val expected = factsetId.next.map((true, _))
 
@@ -45,12 +45,12 @@ object FactsetsSpec extends Specification with ScalaCheck { def is = s2"""
     }
   }
 
-  def factsets = prop { factsets: FactsetList => 
+  def factsets = prop { factsets: FactsetList =>
     withRepository { repo =>
       val expected = factsets.factsets.map(fs => fs.copy(partitions = fs.partitions.sorted)).sortBy(_.id)
 
       (factsets.factsets.traverseU(fs =>
-        fs.partitions.partitions.traverseU(p => writeDataFile(repo.factset(fs.id) </> p.path)).run(repo.configuration)
+        fs.partitions.traverseU(p => writeDataFile(repo.factset(fs.id) </> p.path)).run(repo.configuration)
       ) must beOk) and
         (Factsets.factsets(repo) must beOkLike(_ must containTheSameElementsAs(expected)))
     }
@@ -60,7 +60,7 @@ object FactsetsSpec extends Specification with ScalaCheck { def is = s2"""
     withRepository { repo =>
       val expected = factset.copy(partitions = factset.partitions.sorted)
 
-      (factset.partitions.partitions.traverseU(p => writeDataFile(repo.factset(factset.id) </> p.path)).run(repo.configuration) must beOk) and
+      (factset.partitions.traverseU(p => writeDataFile(repo.factset(factset.id) </> p.path)).run(repo.configuration) must beOk) and
         (Factsets.factset(repo, factset.id) must beOkValue(expected))
     }
   }

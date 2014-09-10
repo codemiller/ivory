@@ -63,7 +63,7 @@ class FeatureStoreTextStorageSpec extends Specification with ScalaCheck with Sca
   /* Write out the feature store and factsets within it */
   def writeFeatureStore(repo: Repository, fstore: FeatureStore): ResultTIO[Unit] = for {
     _ <- writeFile(repo, Repository.featureStoreById(fstore.id), fstore.factsetIds.map(_.value.render))
-    _ <- fstore.factsets.map(_.value).traverseU(factset => factset.partitions.partitions.traverseU(partition =>
+    _ <- fstore.factsets.map(_.value).traverseU(factset => factset.partitions.traverseU(partition =>
            writeFile(repo, Repository.factset(factset.id) </> partition.path </> FilePath("data"), List(""))
          )).map(_.flatten)
   } yield ()
@@ -71,4 +71,3 @@ class FeatureStoreTextStorageSpec extends Specification with ScalaCheck with Sca
   def writeFile(repo: Repository, file: FilePath, lines: List[String]): ResultTIO[Unit] =
     repo.toStore.linesUtf8.write(file, lines)
 }
-

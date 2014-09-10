@@ -59,28 +59,3 @@ object Partition {
   def stringPath(namespace: String, date: Date): String =
     namespace + "/" + "%4d/%02d/%02d".format(date.year, date.month, date.day)
 }
-
-case class Partitions(partitions: List[Partition]) {
-  def sorted: Partitions =
-    Partitions(partitions.sorted)
-
-  def isEmpty: Boolean =
-    partitions.isEmpty
-
-  def show = partitions.map(_.path.path)mkString("\n", "\n", "\n")
-}
-
-object Partitions {
-
-  /** Filter paths before or equal to a given date */
-  def pathsBeforeOrEqual(partitions: List[Partition], to: Date): List[Partition] =
-    partitions.filter(_.date.isBeforeOrEqual(to))
-
-  /** Filter paths after or equal to a given date */
-  def pathsAfterOrEqual(partitions: List[Partition], from: Date): List[Partition] =
-    partitions.filter(_.date.isAfterOrEqual(from))
-
-  /** Filter paths between two dates (inclusive) */
-  def pathsBetween(partitions: List[Partition], from: Date, to: Date): List[Partition] =
-    pathsBeforeOrEqual(pathsAfterOrEqual(partitions, from), to)
-}
