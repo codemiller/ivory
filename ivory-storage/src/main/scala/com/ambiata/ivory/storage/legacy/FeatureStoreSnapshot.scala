@@ -1,7 +1,6 @@
 package com.ambiata.ivory.storage.legacy
 
-import com.ambiata.ivory.core._
-import com.ambiata.ivory.core.IvorySyntax._
+import com.ambiata.ivory.core._, IvorySyntax._
 import com.ambiata.ivory.core.{Prioritized, FeatureStore, Date, SnapshotId}
 import com.ambiata.ivory.storage.fact.{FeatureStoreGlob, FactsetGlob}
 import com.ambiata.ivory.storage.metadata.Metadata
@@ -18,9 +17,9 @@ case class FeatureStoreSnapshot(snapshotId: SnapshotId, date: Date, store: Featu
 object FeatureStoreSnapshot {
   private implicit val logger = LogFactory.getLog("ivory.storage.FeatureStoreSnapshot")
 
-  def fromSnapshotMeta(repository: Repository): SnapshotMeta => ResultTIO[FeatureStoreSnapshot] = (meta: SnapshotMeta) =>
-    featureStoreFromIvory(repository, meta.featureStoreId).map { store =>
-      FeatureStoreSnapshot(meta.snapshotId, meta.date, store)
+  def fromSnapshotMeta(repository: Repository): SnapshotMetadata => ResultTIO[FeatureStoreSnapshot] = (meta: SnapshotMetadata) =>
+    featureStoreFromIvory(repository, meta.storeId).map { store =>
+      FeatureStoreSnapshot(meta.id, meta.date, store)
     }
 
   def fromSnapshotId(repository: Repository, snapshotId: SnapshotId): ResultTIO[FeatureStoreSnapshot] =
@@ -35,7 +34,7 @@ object FeatureStoreSnapshot {
   /**
    * Given a previous Snapshot return the new factsets, up to a given date, as a list of globs (for the current store)
    */
-  def newFactsetGlobs(repository: Repository, previousSnapshot: Option[SnapshotMeta], date: Date): ResultTIO[List[Prioritized[FactsetGlob]]] = for {
+  def newFactsetGlobs(repository: Repository, previousSnapshot: Option[SnapshotMetadata], date: Date): ResultTIO[List[Prioritized[FactsetGlob]]] = for {
     currentFeatureStore  <- Metadata.latestFeatureStoreOrFail(repository)
     featureStoreSnapshot <- previousSnapshot.traverse(fromSnapshotMeta(repository))
     newFeatureStorePaths <- featureStoreSnapshot match {

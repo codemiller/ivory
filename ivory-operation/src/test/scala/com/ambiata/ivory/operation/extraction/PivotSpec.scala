@@ -43,7 +43,7 @@ class PivotSpec extends Specification with SampleFacts with ThrownExpectations {
         _     <- RepositoryBuilder.createRepo(repo, sampleDictionary, sampleFacts)
         pivot <- Reference.fromUriResultTIO((dir </> "pivot").path, repo.configuration)
         meta  <- Snapshots.takeSnapshot(repo, Date.fromLocalDate(LocalDate.now), incremental = false)
-        input     = repo.toReference(Repository.snapshot(meta.snapshotId))
+        input     = repo.toReference(Repository.snapshot(meta.id))
         _                <- Pivot.createPivot(repo, input, pivot, '|', "NA")
         dictRef          <- Reference.fromUriResultTIO((dir </> "pivot" </> ".dictionary").path, repo.configuration)
         dictionaryLines  <- dictRef.run(_.linesUtf8.read)
@@ -56,7 +56,7 @@ class PivotSpec extends Specification with SampleFacts with ThrownExpectations {
     for {
       pivot <- Reference.fromUriFilePathResultTIO(outPath, repository.repositoryConfiguration)
       meta  <- Snapshots.takeSnapshot(repository, Date.fromLocalDate(LocalDate.now), incremental = false)
-      input =  repository.toReference(Repository.snapshot(meta.snapshotId))
+      input =  repository.toReference(Repository.snapshot(meta.id))
       _     <- Pivot.createPivot(repository, input, pivot, '|', "NA")
       lines <- readLines(pivot)
     } yield lines

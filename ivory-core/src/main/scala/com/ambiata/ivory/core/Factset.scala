@@ -13,8 +13,11 @@ case class Factset(id: FactsetId, partitions: List[Partition]) {
        |  ${partitions.mkString("\n", "\n", "\n")}
      """.stripMargin
 
-  def filter(pred: Partition => Boolean): Factset =
+  def filterByPartition(pred: Partition => Boolean): Factset =
     Factset(id, partitions.filter(pred))
+
+  def filterByDate(pred: Date => Boolean): Factset =
+    filterByPartition(p => pred(p.date))
 }
 
 object Factset {

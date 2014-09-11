@@ -360,4 +360,7 @@ object Arbitraries extends arbitraries.ArbitrariesDictionary {
   /* Partitions with size up to 3 x 5 */
   implicit def PartitionsArbitrary: Arbitrary[Partitions] =
     Arbitrary(genPartitions(Gen.choose(1, 3), Gen.choose(1, 5)))
+
+  implicit def DatasetArbitrary: Arbitrary[Dataset] =
+    Arbitrary(Gen.oneOf(arbitrary[Factset].map(FactsetDataset.apply), arbitrary[Snapshot].map(SnapshotDataset.apply)))
 }

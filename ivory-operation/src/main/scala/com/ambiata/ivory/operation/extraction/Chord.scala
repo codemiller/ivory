@@ -56,7 +56,7 @@ object Chord {
   /**
    * Run the chord extraction on Hdfs
    */
-  def runChordOnHdfs(repository: Repository, store: FeatureStore, entities: Entities, outputRef: ReferenceIO, tmp: ReferenceIO, incremental: Option[SnapshotMeta]): ResultTIO[Unit] = {
+  def runChordOnHdfs(repository: Repository, store: FeatureStore, entities: Entities, outputRef: ReferenceIO, tmp: ReferenceIO, incremental: Option[SnapshotMetadata]): ResultTIO[Unit] = {
     val chordRef = tmp </> FilePath(java.util.UUID.randomUUID.toString)
     for {
       hr                   <- downcast[Repository, HdfsRepository](repository, "Chord only works on HDFS repositories at this stage.")

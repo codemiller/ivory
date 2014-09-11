@@ -42,6 +42,6 @@ object snapshot extends IvoryApp {
       for {
         repo <- Repository.fromUriResultTIO(c.repo, configuration)
         meta <- takeSnapshot(repo, Date.fromLocalDate(c.date), c.incremental)
-      } yield List(banner, s"Output path: ${meta.snapshotId}", "Status -- SUCCESS")
+      } yield List(banner, s"Output path: ${meta.id}", "Status -- SUCCESS")
   })
 }

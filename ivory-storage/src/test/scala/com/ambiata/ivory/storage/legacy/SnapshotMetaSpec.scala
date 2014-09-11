@@ -39,8 +39,8 @@ object SnapshotMetaSpec extends Specification with ScalaCheck with ThrownExpecta
    then the snapshot is up to date $uptodate
 """
 
-  def sorting = prop { snaps: List[SnapshotMeta] =>
-    snaps.sorted must_== snaps.sortBy(sm => (sm.snapshotId, sm.date, sm.featureStoreId))
+  def sorting = prop { snaps: List[SnapshotMetadata] =>
+    snaps.sorted must_== snaps.sortBy(sm => (sm.id, sm.date, sm.storeId))
   }
 
   def latest = prop { (snapshots: Snapshots, date1: Date) =>
@@ -70,11 +70,11 @@ object SnapshotMetaSpec extends Specification with ScalaCheck with ThrownExpecta
     } must beOkResult
   }.set(minTestsOk = 10)
 
-  def beUpToDate(repository: Repository, date1: Date): Matcher[Option[SnapshotMeta]] = { snapshot: Option[SnapshotMeta] =>
-    snapshot must beSome { meta: SnapshotMeta =>
+  def beUpToDate(repository: Repository, date1: Date): Matcher[Option[SnapshotMetadata]] = { snapshot: Option[SnapshotMetadata] =>
+    snapshot must beSome { meta: SnapshotMetadata =>
 
       "the snapshot feature store is the latest feature store if it is up to date" ==> {
-        Metadata.latestFeatureStoreOrFail(repository) map { store => meta.featureStoreId ==== store.id } must beOk
+        Metadata.latestFeatureStoreOrFail(repository) map { store => meta.storeId ==== store.id } must beOk
       }
 
       "there are no new facts after the snapshot date" ==> {
@@ -98,15 +98,15 @@ object SnapshotMetaSpec extends Specification with ScalaCheck with ThrownExpecta
   /**
    * ARBITRARIES
    */
-  implicit def SnapshotMetaArbitrary: Arbitrary[SnapshotMeta] = Arbitrary(for {
+  implicit def SnapshotMetaArbitrary: Arbitrary[SnapshotMetadata] = Arbitrary(for {
     snapshotId  <- arbitrary[SnapshotId]
     date        <- arbitrary[Date]
     storeId     <- arbitrary[FeatureStoreId]
-  } yield SnapshotMeta(snapshotId, date, storeId))
+  } yield SnapshotMetadata(snapshotId, date, storeId))
 
-  case class Snapshots(metas: List[SnapshotMeta])
-  
-  implicit def SnapshotsArbitrary: Arbitrary[Snapshots] = Arbitrary { 
+  case class Snapshots(metas: List[SnapshotMetadata])
+
+  implicit def SnapshotsArbitrary: Arbitrary[Snapshots] = Arbitrary {
     for {
       ids <- arbitrary[SmallSnapshotIdList]
       sms <- Gen.oneOf(genSnapshotMetas(ids)                // random SnapshotMeta's
@@ -116,28 +116,28 @@ object SnapshotMetaSpec extends Specification with ScalaCheck with ThrownExpecta
     } yield Snapshots(sms)
   }
 
-  def genSnapshotMetas(ids: SmallSnapshotIdList): Gen[List[SnapshotMeta]] =
+  def genSnapshotMetas(ids: SmallSnapshotIdList): Gen[List[SnapshotMetadata]] =
     ids.ids.traverseU { id =>
       for {
         date  <- arbitrary[Date]
         store <- arbitrary[FeatureStoreId]
-      } yield SnapshotMeta(id, date, store)
+      } yield SnapshotMetadata(id, date, store)
     }
 
-  def genSameDateSnapshotMetas(ids: SmallSnapshotIdList): Gen[List[SnapshotMeta]] = for {
+  def genSameDateSnapshotMetas(ids: SmallSnapshotIdList): Gen[List[SnapshotMetadata]] = for {
     date  <- arbitrary[Date]
-    snaps <- ids.ids.traverseU(id => arbitrary[FeatureStoreId].map(sid => SnapshotMeta(id, date, sid)))
+    snaps <- ids.ids.traverseU(id => arbitrary[FeatureStoreId].map(sid => SnapshotMetadata(id, date, sid)))
   } yield snaps
 
-  def genSameStoreSnapshotMetas(ids: SmallSnapshotIdList): Gen[List[SnapshotMeta]] = for {
+  def genSameStoreSnapshotMetas(ids: SmallSnapshotIdList): Gen[List[SnapshotMetadata]] = for {
     store <- arbitrary[FeatureStoreId]
-    snaps <- ids.ids.traverseU(id => arbitrary[Date].map(d => SnapshotMeta(id, d, store)))
+    snaps <- ids.ids.traverseU(id => arbitrary[Date].map(d => SnapshotMetadata(id, d, store)))
   } yield snaps
 
-  def genSameSnapshotMetas(ids: SmallSnapshotIdList): Gen[List[SnapshotMeta]] = for {
+  def genSameSnapshotMetas(ids: SmallSnapshotIdList): Gen[List[SnapshotMetadata]] = for {
     date  <- arbitrary[Date]
     store <- arbitrary[FeatureStoreId]
-    snaps <- ids.ids.map(id => SnapshotMeta(id, date, store))
+    snaps <- ids.ids.map(id => SnapshotMetadata(id, date, store))
   } yield snaps
 
   case class DateOffset(year: Short, month: Byte, day: Byte) {
@@ -185,9 +185,9 @@ object SnapshotMetaSpec extends Specification with ScalaCheck with ThrownExpecta
     } must beOkLike(_.isSuccess)
   }
 
-  def storeSnapshotMeta(repo: Repository, meta: SnapshotMeta): ResultTIO[Unit] = {
-    val path = Repository.snapshots </> FilePath(meta.snapshotId.render) </> SnapshotMeta.fname
-    repo.toReference(path).run(store => p => store.linesUtf8.write(p, meta.stringLines))
+  def storeSnapshotMeta(repo: Repository, meta: SnapshotMetadata): ResultTIO[Unit] = {
+    val path = Repository.snapshots </> FilePath(meta.id.render) </> SnapshotMeta.fname
+    repo.toReference(path).run(store => p => store.linesUtf8.write(p, SnapshotMeta.stringLines(meta)))
   }
 
 }

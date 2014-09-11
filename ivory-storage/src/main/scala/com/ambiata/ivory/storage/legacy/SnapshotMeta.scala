@@ -12,47 +12,30 @@ import com.ambiata.mundane.parse.ListParser
 
 import scalaz._, Scalaz._, \&/._, effect.IO
 
-// FIX MTH rename and move to core.
-case class SnapshotMeta(snapshotId: SnapshotId, date: Date, featureStoreId: FeatureStoreId) {
-
-  def toReference(ref: ReferenceIO): ResultTIO[Unit] =
-    ref.run(featureStore => path => featureStore.linesUtf8.write(path, stringLines))
-
-  lazy val stringLines: List[String] =
-    List(date.string("-"), featureStoreId.render)
-
-  def order(other: SnapshotMeta): Ordering =
-    (snapshotId, date, featureStoreId).?|?((other.snapshotId, other.date, other.featureStoreId))
-}
+// FIX MTH remove
 
 object SnapshotMeta {
 
   val fname = FilePath(".snapmeta")
 
-  implicit def SnapshotMetaOrder: Order[SnapshotMeta] =
-    Order.order(_ order _)
-
-  implicit def SnapshotMetaOrdering =
-    SnapshotMetaOrder.toScalaOrdering
-
-  def fromReference(ref: ReferenceIO): ResultTIO[SnapshotMeta] = for {
+  def fromReference(ref: ReferenceIO): ResultTIO[SnapshotMetadata] = for {
     lines      <- ref.run(store => store.linesUtf8.read)
     snapshotId <- ResultT.fromOption[IO, SnapshotId](SnapshotId.parse(ref.path.dirname.basename.path), s"can't parse ${ref.path.basename.path} as a snapshot id")
-    sm         <- ResultT.fromDisjunction[IO, SnapshotMeta](parser(snapshotId).run(lines).disjunction.leftMap(This.apply))
+    sm         <- ResultT.fromDisjunction[IO, SnapshotMetadata](parser(snapshotId).run(lines).disjunction.leftMap(This.apply))
   } yield sm
 
-  def fromIdentifier(repo: Repository, id: SnapshotId): ResultTIO[SnapshotMeta] =
+  def fromIdentifier(repo: Repository, id: SnapshotId): ResultTIO[SnapshotMetadata] =
     fromReference(repo.toReference(Repository.snapshots </> FilePath(id.render) </> fname))
 
   /**
    * Parse a snapshot meta file for a given snapshot id
    */
-  def parser(snapshotId: SnapshotId): ListParser[SnapshotMeta] = {
+  def parser(snapshotId: SnapshotId): ListParser[SnapshotMetadata] = {
     import ListParser._
     for {
       date    <- localDate
       storeId <- FeatureStoreId.listParser
-    } yield SnapshotMeta(snapshotId, Date.fromLocalDate(date), storeId)
+    } yield SnapshotMetadata(snapshotId, Date.fromLocalDate(date), storeId)
   }
 
   /**
@@ -66,10 +49,10 @@ object SnapshotMeta {
   /**
    * create a new Snapshot meta object by allocating a new snapshot id
    */
-  def createSnapshotMeta(repository: Repository, date: Date): ResultTIO[SnapshotMeta] = for {
+  def createSnapshotMetadata(repository: Repository, date: Date): ResultTIO[SnapshotMetadata] = for {
     storeId     <- Metadata.latestFeatureStoreIdOrFail(repository)
-    snapshotId  <- SnapshotMeta.allocateId(repository)
-  } yield SnapshotMeta(snapshotId, date, storeId)
+    snapshotId  <- allocateId(repository)
+  } yield SnapshotMetadata(snapshotId, date, storeId)
 
   /**
    * Get the latest snapshot which is just before a given date
@@ -81,25 +64,25 @@ object SnapshotMeta {
    *     OR the snapshot.date <= date
    *        but there are no partitions between the snapshot date and date for factsets in the latest feature store
    */
-  def latestUpToDateSnapshot(repository: Repository, date: Date): ResultTIO[Option[SnapshotMeta]] = {
-    latestSnapshot(repository, date).flatMap(_.traverseU { meta: SnapshotMeta =>
+  def latestUpToDateSnapshot(repository: Repository, date: Date): ResultTIO[Option[SnapshotMetadata]] = {
+    latestSnapshot(repository, date).flatMap(_.traverseU { meta: SnapshotMetadata =>
 
       Metadata.latestFeatureStoreOrFail(repository).flatMap { featureStore =>
-        if (meta.featureStoreId == featureStore.id) {
+        if (meta.storeId == featureStore.id) {
 
-          if (meta.date == date) ResultT.ok[IO, Option[SnapshotMeta]](Some(meta))
+          if (meta.date == date) ResultT.ok[IO, Option[SnapshotMetadata]](Some(meta))
           else
             FeatureStoreGlob.between(repository, featureStore, meta.date, date).map { glob =>
               if (glob.partitions.isEmpty) Some(meta)
               else                         None
             }
-        } else ResultT.ok[IO, Option[SnapshotMeta]](None)
+        } else ResultT.ok[IO, Option[SnapshotMetadata]](None)
       }
     }).map(_.flatten)
   }
 
-  def latestWithStoreId(repository: Repository, date: Date, featureStoreId: FeatureStoreId): ResultTIO[Option[SnapshotMeta]] =
-    latestSnapshot(repository, date).map(_.filter(_.featureStoreId == featureStoreId))
+  def latestWithStoreId(repository: Repository, date: Date, featureStoreId: FeatureStoreId): ResultTIO[Option[SnapshotMetadata]] =
+    latestSnapshot(repository, date).map(_.filter(_.storeId == featureStoreId))
 
   /**
    * get the latest snapshot which is just before a given date
@@ -113,7 +96,7 @@ object SnapshotMeta {
    *  (snapshotId, featureStoreId, date)
    *
    */
-  def latestSnapshot(repository: Repository, date: Date): ResultTIO[Option[SnapshotMeta]] = for {
+  def latestSnapshot(repository: Repository, date: Date): ResultTIO[Option[SnapshotMetadata]] = for {
     ids      <- repository.toReference(Repository.snapshots).run(s => p => StoreDataUtil.listDir(s, p)).map(_.map(_.basename.path))
     metas    <- ids.traverseU(sid => SnapshotId.parse(sid).map(id => fromIdentifier(repository, id)).sequenceU)
     filtered =  metas.flatten.filter(_.date isBeforeOrEqual date)
@@ -127,7 +110,12 @@ object SnapshotMeta {
   /**
    * save the snapshot meta object to disk
    */
-  def save(snapshotMeta: SnapshotMeta, output: ReferenceIO): ResultTIO[Unit] =
-    snapshotMeta.toReference(output </> SnapshotMeta.fname)
+  def save(snapshotMeta: SnapshotMetadata, output: ReferenceIO): ResultTIO[Unit] =
+    toReference(snapshotMeta, output </> fname)
 
+  def toReference(snapshotMeta: SnapshotMetadata, ref: ReferenceIO): ResultTIO[Unit] =
+    ref.run(featureStore => path => featureStore.linesUtf8.write(path, stringLines(snapshotMeta)))
+
+  def stringLines(snapshotMeta: SnapshotMetadata): List[String] =
+    List(snapshotMeta.date.string("-"), snapshotMeta.storeId.render)
 }
