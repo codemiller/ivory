@@ -8,7 +8,6 @@ import scalaz.{Value => _, _}, Scalaz._, effect.IO
 
 trait TextStorage[L, T] {
 
-  def name: String
   def parseLine(i: Int, l: String): ValidationNel[String, L]
   def fromList(s: List[L]): T
   def toList(t: T): List[L]
