@@ -206,7 +206,7 @@ object build extends Build {
   lazy val compilationSettings: Seq[Settings] = Seq(
     javaOptions ++= Seq("-Xmx3G", "-Xms512m", "-Xss4m")
   , javacOptions ++= Seq("-source", "1.6", "-target", "1.6")
-  , maxErrors := 20
+  , maxErrors := 10
   , scalacOptions in Compile ++= Seq(
       "-target:jvm-1.6"
     , "-deprecation"
@@ -243,7 +243,10 @@ object build extends Build {
                                Seq()
                              else
                                Seq(Tests.Argument("--", "exclude", "aws")))
-  ) ++ instrumentSettings ++ Seq(ScoverageKeys.highlighting := false)
+  ) ++ instrumentSettings ++ Seq(
+    ScoverageKeys.highlighting := false
+  , ScoverageKeys.excludedPackages in ScoverageCompile := "com.ambiata.ivory.core.thrift\..*"
+  )
 
   lazy val prompt = shellPrompt in ThisBuild := { state =>
     val name = Project.extract(state).currentRef.project

@@ -5,12 +5,11 @@ import com.ambiata.ivory.data.{IdentifierStorage, StoreDataUtil}
 import com.ambiata.ivory.storage.fact.FeatureStoreGlob
 import com.ambiata.ivory.storage.metadata._
 
-import scalaz._, Scalaz._, \&/._, effect.IO
 import com.ambiata.mundane.control._
 import com.ambiata.mundane.io._
 import com.ambiata.mundane.parse.ListParser
 
-import scalaz._, Scalaz._, \&/._, effect.IO
+import scalaz._, \&/._, effect.IO
 
 // FIX MTH remove
 
@@ -64,7 +63,7 @@ object SnapshotMeta {
    *     OR the snapshot.date <= date
    *        but there are no partitions between the snapshot date and date for factsets in the latest feature store
    */
-  def latestUpToDateSnapshot(repository: Repository, date: Date): ResultTIO[Option[SnapshotMetadata]] = {
+/*  def latestUpToDateSnapshot(repository: Repository, date: Date): ResultTIO[Option[SnapshotMetadata]] = {
     latestSnapshot(repository, date).flatMap(_.traverseU { meta: SnapshotMetadata =>
 
       Metadata.latestFeatureStoreOrFail(repository).flatMap { featureStore =>
@@ -80,9 +79,9 @@ object SnapshotMeta {
       }
     }).map(_.flatten)
   }
-
-  def latestWithStoreId(repository: Repository, date: Date, featureStoreId: FeatureStoreId): ResultTIO[Option[SnapshotMetadata]] =
-    latestSnapshot(repository, date).map(_.filter(_.storeId == featureStoreId))
+*/
+//  def latestWithStoreId(repository: Repository, date: Date, featureStoreId: FeatureStoreId): ResultTIO[Option[SnapshotMetadata]] =
+//    latestSnapshot(repository, date).map(_.filter(_.storeId == featureStoreId))
 
   /**
    * get the latest snapshot which is just before a given date
@@ -96,26 +95,9 @@ object SnapshotMeta {
    *  (snapshotId, featureStoreId, date)
    *
    */
-  def latestSnapshot(repository: Repository, date: Date): ResultTIO[Option[SnapshotMetadata]] = for {
+/*  def latestSnapshot(repository: Repository, date: Date): ResultTIO[Option[SnapshotMetadata]] = for {
     ids      <- repository.toReference(Repository.snapshots).run(s => p => StoreDataUtil.listDir(s, p)).map(_.map(_.basename.path))
     metas    <- ids.traverseU(sid => SnapshotId.parse(sid).map(id => fromIdentifier(repository, id)).sequenceU)
     filtered =  metas.flatten.filter(_.date isBeforeOrEqual date)
-  } yield filtered.sorted.lastOption
-
-  /**
-   * A snapshot is up to date if:
-   *
-   */
-
-  /**
-   * save the snapshot meta object to disk
-   */
-  def save(snapshotMeta: SnapshotMetadata, output: ReferenceIO): ResultTIO[Unit] =
-    toReference(snapshotMeta, output </> fname)
-
-  def toReference(snapshotMeta: SnapshotMetadata, ref: ReferenceIO): ResultTIO[Unit] =
-    ref.run(featureStore => path => featureStore.linesUtf8.write(path, stringLines(snapshotMeta)))
-
-  def stringLines(snapshotMeta: SnapshotMetadata): List[String] =
-    List(snapshotMeta.date.string("-"), snapshotMeta.storeId.render)
+  } yield filtered.sorted.lastOption */
 }

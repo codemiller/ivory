@@ -6,7 +6,7 @@ import com.ambiata.mundane.control._
 
 import scalaz._, effect.IO
 
-object SnpapshotStorage {
+object SnapshotStorage {
   def getById(repository: Repository, id: SnapshotId): ResultT[IO, Snapshot] =
     SnapshotMetadataStorage.getById(repository, id).flatMap(getByMetadata(repository, _))
 

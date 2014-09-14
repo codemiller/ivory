@@ -1,12 +1,14 @@
 package com.ambiata.ivory.operation.extraction
 
-import com.ambiata.ivory.core._, IvorySyntax._
+import com.ambiata.ivory.core._
 import com.ambiata.ivory.core.thrift._
 import com.ambiata.ivory.lookup.{FactsetLookup, FactsetVersionLookup}
 import com.ambiata.ivory.storage.fact._
 import com.ambiata.ivory.storage.legacy._
 import com.ambiata.ivory.mr._
 import com.ambiata.mundane.io.FilePath
+import com.ambiata.mundane.io.MemoryConversions._
+import com.ambiata.poacher.hdfs._
 
 import java.lang.{Iterable => JIterable}
 import java.util.{Iterator => JIterator}
@@ -29,7 +31,17 @@ import org.apache.thrift.protocol.TCompactProtocol
  * This is a hand-coded MR job to squeeze the most out of snapshot performance.
  */
 object SnapshotJob {
-  def run(conf: Configuration, reducers: Int, date: Date, inputs: List[Prioritized[FactsetGlob]], output: Path, incremental: Option[Path], codec: Option[CompressionCodec]): Unit = {
+  def run(root: Path, datasets: Datasets, date: Date, output: Path, codec: Option[CompressionCodec]): Hdfs[Unit] = for {
+    conf     <- Hdfs.configuration
+    inputs   = datasets.byPriority.sets.map(_.map({
+      case FactsetDataset(factset) =>
+        new Path(new Path(root, factset.id.render), "*/*/*/*") -> classOf[SnapshotFactsetMapper]
+      case SnapshotDataset(snapshot) =>
+        new Path(root, snapshot.id.render) -> classOf[SnapshotIncrementalMapper]
+    }))
+    size     <- inputs.traverse({ case Prioritized(_, (path, _)) => Hdfs.size(path) }).map(_.sum)
+    reducers = (size.toBytes.value / 2.gb.toBytes.value + 1).toInt // one reducer per 2GB of input
+    ctx      <- Hdfs.safe({
 
     val job = Job.getInstance(conf)
     val ctx = MrContext.newContext("ivory-snapshot", job)
@@ -52,17 +64,9 @@ object SnapshotJob {
     job.setOutputValueClass(classOf[BytesWritable])
 
     // input
-    val mappers = inputs.map(p => (classOf[SnapshotFactsetMapper], p.value))
-    mappers.foreach({ case (clazz, factsetGlob) =>
-      factsetGlob.paths.foreach(path => {
-        println(s"Input path: ${path.path}")
-        MultipleInputs.addInputPath(job, path.toHdfs, classOf[SequenceFileInputFormat[_, _]], clazz)
-      })
-    })
-
-    incremental.foreach(p => {
-      println(s"Incremental path: ${p}")
-      MultipleInputs.addInputPath(job, p, classOf[SequenceFileInputFormat[_, _]], classOf[SnapshotIncrementalMapper])
+    inputs.foreach({ case Prioritized(_, (path, clazz)) =>
+      println(s"Input path: ${path}")
+      MultipleInputs.addInputPath(job, path, classOf[SequenceFileInputFormat[_, _]], clazz)
     })
 
     // output
@@ -78,27 +82,27 @@ object SnapshotJob {
 
     // cache / config initializtion
     job.getConfiguration.set(Keys.SnapshotDate, date.int.toString)
-    ctx.thriftCache.push(job, Keys.FactsetLookup, priorityTable(inputs))
-    ctx.thriftCache.push(job, Keys.FactsetVersionLookup, versionTable(inputs.map(_.value)))
+    ctx.thriftCache.push(job, Keys.FactsetLookup, priorityTable(datasets))
+    ctx.thriftCache.push(job, Keys.FactsetVersionLookup, versionTable(datasets))
 
     // run job
     if (!job.waitForCompletion(true))
       Crash.error(Crash.ResultTIO, "ivory snapshot failed.")
 
-    // commit files to factset
-    Committer.commit(ctx, {
+    ctx
+  })
+  _ <- Committer.commit(ctx, {
       case "snap" => output
-    }, true).run(conf).run.unsafePerformIO
-    ()
-  }
+    }, true)
+  } yield ()
 
-  def priorityTable(globs: List[Prioritized[FactsetGlob]]): FactsetLookup = {
+  def priorityTable(datasets: Datasets): FactsetLookup = {
     val lookup = new FactsetLookup
     globs.foreach(p => lookup.putToPriorities(p.value.factset.render, p.priority.toShort))
     lookup
   }
 
-  def versionTable(globs: List[FactsetGlob]): FactsetVersionLookup = {
+  def versionTable(datasets: Datasets): FactsetVersionLookup = {
     val lookup = new FactsetVersionLookup
     globs.foreach(g => lookup.putToVersions(g.factset.render, g.version.toByte))
     lookup

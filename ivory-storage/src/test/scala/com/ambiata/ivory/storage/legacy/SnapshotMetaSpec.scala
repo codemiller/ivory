@@ -1,4 +1,4 @@
-package com.ambiata.ivory.storage.legacy
+/*package com.ambiata.ivory.storage.legacy
 
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.storage.fact.{Factsets, FeatureStoreGlob}
@@ -187,7 +187,9 @@ object SnapshotMetaSpec extends Specification with ScalaCheck with ThrownExpecta
 
   def storeSnapshotMeta(repo: Repository, meta: SnapshotMetadata): ResultTIO[Unit] = {
     val path = Repository.snapshots </> FilePath(meta.id.render) </> SnapshotMeta.fname
-    repo.toReference(path).run(store => p => store.linesUtf8.write(p, SnapshotMeta.stringLines(meta)))
+//    repo.toReference(path).run(store => p => store.linesUtf8.write(p, SnapshotMeta.stringLines(meta)))
+    ???
   }
 
 }
+*/
