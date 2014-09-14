@@ -2,7 +2,7 @@ package com.ambiata.ivory.storage.legacy
 
 import com.ambiata.ivory.storage.fact.{FactsetVersionTwo, FactsetVersion, FactsetVersionOne}
 
-import scalaz.{Name => _, DList => _, Value => _, _}, Scalaz._
+import scalaz.{Name => _, DList => _, Value => _, _}
 import com.nicta.scoobi.Scoobi._
 import org.apache.hadoop.io.compress.CompressionCodec
 import org.apache.hadoop.fs.Path
@@ -10,7 +10,6 @@ import com.ambiata.mundane.io._
 
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.core.thrift._
-import com.ambiata.ivory.storage.fact.FactsetGlob
 import com.ambiata.poacher.scoobi._
 import com.ambiata.ivory.scoobi._
 import FactFormats._
@@ -28,16 +27,6 @@ trait PartitionFactThriftStorage {
   def createFact(partition: Partition, tfact: ThriftFact): Fact =
     FatThriftFact(partition.namespace.name, partition.date, tfact)
 
-  def loadScoobiWith(repo: Repository, factset: FactsetId, from: Option[Date], to: Option[Date]): ScoobiAction[DList[ParseError \/ Fact]] = for {
-    glob  <- ScoobiAction.fromResultTIO((from, to) match {
-               case (Some(f), Some(t)) => FactsetGlob.between(repo, factset, f, t)
-               case (Some(f), None)    => FactsetGlob.after(repo, factset, f)
-               case (None, Some(t))    => FactsetGlob.before(repo, factset, t)
-               case (None, None)       => FactsetGlob.select(repo, factset)
-             })
-    dlist <- loadScoobiFromPaths(glob.map(_.paths).getOrElse(Nil))
-  } yield dlist
-
   def loadScoobiFromPaths(paths: List[FilePath]): ScoobiAction[DList[ParseError \/ Fact]] =
     ScoobiAction.scoobiJob({ implicit sc: ScoobiConfiguration =>
       if(paths.nonEmpty)
@@ -45,18 +34,6 @@ trait PartitionFactThriftStorage {
       else
         DList[ParseError \/ Fact]()
     })
-
-  case class PartitionedFactThriftLoader(repo: Repository, factset: FactsetId, from: Option[Date] = None, to: Option[Date] = None) {
-    def loadScoobi: ScoobiAction[DList[ParseError \/ Fact]] =
-      loadScoobiWith(repo, factset, from, to)
-  }
-
-  case class PartitionedMultiFactsetThriftLoader(repo: Repository, factsets: List[Prioritized[FactsetId]], from: Option[Date] = None, to: Option[Date] = None) {
-    def loadScoobi: ScoobiAction[DList[ParseError \/ (Priority, FactsetId, Fact)]] =
-      factsets.traverseU(pfs =>
-        loadScoobiWith(repo, pfs.value, from, to).map(_.map(_.map((pfs.priority, pfs.value, _))))
-      ).map(_.foldLeft(DList[ParseError \/ (Priority, FactsetId, Fact)]())(_ ++ _))
-  }
 
   val partitionPath: ((String, Date)) => String = scalaz.Memo.mutableHashMapMemo { nsd =>
     Partition.stringPath(nsd._1, nsd._2)
