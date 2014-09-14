@@ -16,7 +16,7 @@ import com.ambiata.ivory.core._
 import com.ambiata.ivory.scoobi.FactFormats._
 import com.ambiata.poacher.scoobi._
 import com.ambiata.ivory.storage.metadata._, Metadata._
-import com.ambiata.ivory.storage.snapshot._
+import com.ambiata.ivory.storage.plan._
 import com.ambiata.ivory.operation.validation._
 import com.ambiata.poacher.hdfs._
 import Entities._
@@ -43,16 +43,15 @@ object Chord {
     entities            <- Entities.readEntitiesFrom(entitiesRef)
     _                   <- logInfo(s"Earliest date in chord file is '${entities.earliestDate}'")
     _                   <- logInfo(s"Latest date in chord file is '${entities.latestDate}'")
-    store               <- Metadata.latestFeatureStoreOrFail(repository)
     _                   <- ResultT.when(takeSnapshot, Snapshots.takeSnapshot(repository, entities.earliestDate).void)
-    _                   <- runChordOnHdfs(repository, store, entities, outputRef, tmp)
+    _                   <- runChordOnHdfs(repository, entities, outputRef, tmp)
     _                   <- storeDictionary(repository, outputRef)
   } yield ()
 
   /**
    * Run the chord extraction on Hdfs
    */
-  def runChordOnHdfs(repository: Repository, store: FeatureStore, entities: Entities, outputRef: ReferenceIO, tmp: ReferenceIO): ResultTIO[Unit] = {
+  def runChordOnHdfs(repository: Repository, entities: Entities, outputRef: ReferenceIO, tmp: ReferenceIO): ResultTIO[Unit] = {
     val chordRef = tmp </> FilePath(java.util.UUID.randomUUID.toString)
     for {
       hr                   <- downcast[Repository, HdfsRepository](repository, "Chord only works on HDFS repositories at this stage.")
@@ -60,7 +59,7 @@ object Chord {
       outputPath           =  (outputStore.base </> outputRef.path).toHdfs
       _                    <- serialiseEntities(entities, chordRef)
       dictionary           <- dictionaryFromIvory(repository)
-      datasets             <- ChordPlanner.plan(repositories, entities)
+      datasets             <- ChordPlanner.plan(repository, entities)
       _                    <- chordScoobiJob(hr, dictionary, datasets, chordRef, entities.latestDate, outputPath, hr.codec).run(hr.scoobiConfiguration)
     } yield ()
   }
@@ -72,9 +71,10 @@ object Chord {
   def chordScoobiJob(repository: Repository, dictionary: Dictionary, datasets: Datasets, chordReference: ReferenceIO,
                      latestDate: Date, outputPath: Path, codec: Option[CompressionCodec]): ScoobiAction[Unit] = ScoobiAction.scoobiJob { implicit sc: ScoobiConfiguration =>
 
+      // FIX MTH this needs to be serialized properly https://github.com/ambiata/ivory/issues/268
       lazy val entities = getEntities(chordReference)
 
-      Chord.readFacts(repository, store, latestDate, snapshot).map { facts =>
+      Chord.readFacts(repository, datasets, latestDate).map { facts =>
 
         /** get only the facts for the chord entities */
         val entitiesFacts: DList[PrioritizedFact] = filterFacts(facts, entities)
@@ -84,7 +84,7 @@ object Chord {
          */
         val latestFacts: DList[PrioritizedFact] = getBestFacts(entitiesFacts, entities)
 
-        val validated: DList[PrioritizedFact] = validateFacts(latestFacts, dictionary, store, snapshot)
+        val validated: DList[PrioritizedFact] = validateFacts(latestFacts, dictionary, datasets)
 
         validated.valueToSequenceFile(outputPath.toString, overwrite = true).persistWithCodec(codec); ()
       }
@@ -94,7 +94,7 @@ object Chord {
    * filter out the facts which are not in the entityMap or
    * which date are greater than the required dates for this entity
    */
-  def filterFacts(facts: DList[(Priority, SnapshotId \/ FactsetId, Fact)], getEntities: =>Entities): DList[PrioritizedFact] =
+  def filterFacts(facts: DList[(Priority, SnapshotId \/ FactsetId, Fact)], getEntities: => Entities): DList[PrioritizedFact] =
     facts.parallelDo(new DoFn[(Priority, SnapshotId \/ FactsetId, Fact), PrioritizedFact] {
       var entities: Entities = null
       override def setup() { entities = getEntities }
@@ -109,7 +109,7 @@ object Chord {
   /**
    * Get the list of facts with the best priority and the most recent for each entity (and required entity date)
    */
-  def getBestFacts(facts: DList[PrioritizedFact], getEntities: =>Entities): DList[PrioritizedFact] =
+  def getBestFacts(facts: DList[PrioritizedFact], getEntities: => Entities): DList[PrioritizedFact] =
     facts
       .groupBy { case (p, f) => (f.entity, f.featureId.toString) }
       .parallelDo(new DoFn[((String, String), Iterable[PrioritizedFact]), PrioritizedFact] {
@@ -129,7 +129,7 @@ object Chord {
   /**
    * Validate that facts are in the dictionary with the right encoding
    */
-  def validateFacts(facts: DList[PrioritizedFact], dictionary: Dictionary, store: FeatureStore, incremental: Option[Snapshot]): DList[PrioritizedFact] = {
+  def validateFacts(facts: DList[PrioritizedFact], dictionary: Dictionary, datasets: Datasets): DList[PrioritizedFact] = {
     // for each priority we get its snapshot id or factset id
     val priorities: util.Map[Priority, String] =
       mapAsJavaMap((incremental     .map(i =>  (Priority.Max, s"Snapshot '${i.id.render}'")) ++
@@ -147,8 +147,7 @@ object Chord {
    * Read facts from a FeatureStore, up to a given date
    * If a FeatureStore snapshot is given we use it to retrieve the latest values
    */
-  def readFacts(repository: Repository, featureStore: FeatureStore,
-                latestDate: Date, featureStoreSnapshot: Option[Snapshot]): ScoobiAction[DList[(Priority, SnapshotId \/ FactsetId, Fact)]] = {
+  def readFacts(repository: Repository, datasets: Datasets, latestDate: Date): ScoobiAction[DList[(Priority, SnapshotId \/ FactsetId, Fact)]] = {
     featureStoreSnapshot match {
       case None =>
         factsFromIvoryStoreTo(repository, featureStore, latestDate).failError("cannot read facts")
