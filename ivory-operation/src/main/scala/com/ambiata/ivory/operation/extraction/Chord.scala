@@ -15,7 +15,6 @@ import com.ambiata.ivory.core.IvorySyntax._
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.scoobi.FactFormats._
 import com.ambiata.poacher.scoobi._
-import com.ambiata.ivory.storage.legacy.IvoryStorage._
 import com.ambiata.ivory.storage.metadata._, Metadata._
 import com.ambiata.ivory.storage.snapshot._
 import com.ambiata.ivory.operation.validation._
@@ -41,31 +40,28 @@ object Chord {
    * Finally store the dictionary alongside the Chord
    */
   def createChord(repository: Repository, entitiesRef: ReferenceIO, outputRef: ReferenceIO, tmp: ReferenceIO, takeSnapshot: Boolean): ResultTIO[Unit] = for {
-    _                   <- checkThat(repository, repository.isInstanceOf[HdfsRepository], "Chord only works on HDFS repositories at this stage.")
-    _                   <- checkThat(outputRef, outputRef.store.isInstanceOf[HdfsStore], s"Currently output path must be on HDFS. Given value is $outputRef")
     entities            <- Entities.readEntitiesFrom(entitiesRef)
     _                   <- logInfo(s"Earliest date in chord file is '${entities.earliestDate}'")
     _                   <- logInfo(s"Latest date in chord file is '${entities.latestDate}'")
     store               <- Metadata.latestFeatureStoreOrFail(repository)
-    snapshot            <- if (takeSnapshot) Snapshots.takeSnapshot(repository, entities.earliestDate).map(Option.apply)
-                           else              SnapshotMetadataStorage.getLatest(repository, entities.earliestDate)
-    _                   <- runChordOnHdfs(repository, store, entities, outputRef, tmp, snapshot)
+    _                   <- ResultT.when(takeSnapshot, Snapshots.takeSnapshot(repository, entities.earliestDate).void)
+    _                   <- runChordOnHdfs(repository, store, entities, outputRef, tmp)
     _                   <- storeDictionary(repository, outputRef)
   } yield ()
 
   /**
    * Run the chord extraction on Hdfs
    */
-  def runChordOnHdfs(repository: Repository, store: FeatureStore, entities: Entities, outputRef: ReferenceIO, tmp: ReferenceIO, incremental: Option[SnapshotMetadata]): ResultTIO[Unit] = {
+  def runChordOnHdfs(repository: Repository, store: FeatureStore, entities: Entities, outputRef: ReferenceIO, tmp: ReferenceIO): ResultTIO[Unit] = {
     val chordRef = tmp </> FilePath(java.util.UUID.randomUUID.toString)
     for {
       hr                   <- downcast[Repository, HdfsRepository](repository, "Chord only works on HDFS repositories at this stage.")
       outputStore          <- downcast[Any, HdfsStore](outputRef.store, s"Currently output path must be on HDFS. Given value is $outputRef")
       outputPath           =  (outputStore.base </> outputRef.path).toHdfs
       _                    <- serialiseEntities(entities, chordRef)
-      featureStoreSnapshot <- incremental.traverseU(meta => SnapshotStorage.getByMetadata(repository, meta))
       dictionary           <- dictionaryFromIvory(repository)
-      _                    <- chordScoobiJob(hr, dictionary, store, chordRef, entities.latestDate, featureStoreSnapshot, outputPath, hr.codec).run(hr.scoobiConfiguration)
+      datasets             <- ChordPlanner.plan(repositories, entities)
+      _                    <- chordScoobiJob(hr, dictionary, datasets, chordRef, entities.latestDate, outputPath, hr.codec).run(hr.scoobiConfiguration)
     } yield ()
   }
 
@@ -73,9 +69,8 @@ object Chord {
    * Persist facts which are the latest corresponding to a set of dates given for each entity.
    * Use the latest feature store snapshot if available
    */
-  def chordScoobiJob(repository: Repository, dictionary: Dictionary, store: FeatureStore, chordReference: ReferenceIO,
-                     latestDate: Date, snapshot: Option[Snapshot],
-                     outputPath: Path, codec: Option[CompressionCodec]): ScoobiAction[Unit] = ScoobiAction.scoobiJob { implicit sc: ScoobiConfiguration =>
+  def chordScoobiJob(repository: Repository, dictionary: Dictionary, datasets: Datasets, chordReference: ReferenceIO,
+                     latestDate: Date, outputPath: Path, codec: Option[CompressionCodec]): ScoobiAction[Unit] = ScoobiAction.scoobiJob { implicit sc: ScoobiConfiguration =>
 
       lazy val entities = getEntities(chordReference)
 
