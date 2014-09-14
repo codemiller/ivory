@@ -84,7 +84,7 @@ object Chord {
          */
         val latestFacts: DList[PrioritizedFact] = getBestFacts(entitiesFacts, entities)
 
-        val validated: DList[PrioritizedFact] = validateFacts(latestFacts, dictionary, datasets)
+        val validated: DList[PrioritizedFact] = validateFacts(latestFacts, dictionary)
 
         validated.valueToSequenceFile(outputPath.toString, overwrite = true).persistWithCodec(codec); ()
       }
@@ -129,19 +129,13 @@ object Chord {
   /**
    * Validate that facts are in the dictionary with the right encoding
    */
-  def validateFacts(facts: DList[PrioritizedFact], dictionary: Dictionary, datasets: Datasets): DList[PrioritizedFact] = {
-    // for each priority we get its snapshot id or factset id
-    val priorities: util.Map[Priority, String] =
-      mapAsJavaMap((incremental     .map(i =>  (Priority.Max, s"Snapshot '${i.id.render}'")) ++
-                    store.factsetIds.map(fs => (fs.priority,  s"Factset  '${fs.value.render}'"))).toMap.withDefault(p => s"Unknown, priority $p"))
-
+  def validateFacts(facts: DList[PrioritizedFact], dictionary: Dictionary): DList[PrioritizedFact] =
     facts.map { case (priority, fact) =>
       Validate.validateFact(fact, dictionary).disjunction match {
-        case -\/(e) => sys.error(s"A critical error has occurred, a value in ivory no longer matches the dictionary: $e ${priorities.get(priority)}")
+        case -\/(e) => sys.error(s"A critical error has occurred, a value in ivory no longer matches the dictionary: $e")
         case \/-(v) => (priority, v)
       }
     }
-  }
 
   /**
    * Read facts from a FeatureStore, up to a given date
