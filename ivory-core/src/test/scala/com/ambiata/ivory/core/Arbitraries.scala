@@ -363,4 +363,41 @@ object Arbitraries extends arbitraries.ArbitrariesDictionary {
 
   implicit def DatasetArbitrary: Arbitrary[Dataset] =
     Arbitrary(Gen.oneOf(arbitrary[Factset].map(FactsetDataset.apply), arbitrary[Snapshot].map(SnapshotDataset.apply)))
+
+  case class DateOffset(year: Short, month: Byte, day: Byte) {
+    import math._
+
+    /** offset an existing date to get a new one */
+    def offset(date: Date): Date = {
+      val newYear  = (date.year + year).toShort
+      val newMonth = (abs((date.month + month) % 12) + 1).toByte
+      val newDay   = (abs((date.day + day) % 31) + 1).toByte
+
+      val newDate = Date.unsafe(newYear, newMonth, newDay)
+      if (isValid(newDate)) newDate else date
+    }
+
+    /** @return a random date, greater or equal than the passed date */
+    def makeGreaterDateThan(date: Date) = {
+      val newYear  = (date.year + abs(year)).toShort
+      val newMonth = { val m = date.month + abs(month); (if (m >= 12) 12 else m).toByte }
+      val newDay   = { val d = date.day + abs(day);     (if (d >= 31) 31 else d).toByte }
+      val newDate = Date.unsafe(newYear, newMonth, newDay)
+      if (isValid(newDate)) newDate else date
+    }
+
+    def isValid(date: Date) =
+      Date.isValid(date.year, date.month, date.day)
+  }
+
+  /** generate date offsets */
+  def genDateOffset: Gen[DateOffset] =
+    for {
+      y <- Gen.choose[Short](-5, 5)
+      m <- Gen.choose[Byte](-12, 12)
+      d <- Gen.choose[Byte](-31, 31)
+    } yield DateOffset(y, m, d)
+
+  implicit def DateOffsetArbitrary: Arbitrary[DateOffset] =
+    Arbitrary(genDateOffset)
 }
