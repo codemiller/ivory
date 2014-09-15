@@ -1,9 +1,8 @@
 package com.ambiata.ivory.operation.rename
 
-import com.ambiata.ivory.core.Prioritized
+import com.ambiata.ivory.core._
 import com.ambiata.ivory.mr._
 import com.ambiata.ivory.operation.extraction.SnapshotJob
-import com.ambiata.ivory.storage.fact.FactsetGlob
 import com.ambiata.ivory.storage.lookup.ReducerLookups
 import com.ambiata.ivory.storage.task.{BaseFactsPartitioner, FactsetJobKeys}
 import com.ambiata.poacher.scoobi.ScoobiAction
@@ -15,7 +14,7 @@ import org.apache.hadoop.mapreduce.lib.input.{MultipleInputs, SequenceFileInputF
 import org.apache.hadoop.mapreduce.lib.output._
 
 object RenameJob {
-  def run(mapping: RenameMapping, inputs: List[Prioritized[FactsetGlob]], target: Path, reducerLookups: ReducerLookups,
+  def run(mapping: RenameMapping, root: Path, inputs: Datasets, target: Path, reducerLookups: ReducerLookups,
           codec: Option[CompressionCodec]): ScoobiAction[RenameStats] = for {
     conf  <- ScoobiAction.scoobiConfiguration
     job = Job.getInstance(conf.configuration)
@@ -43,12 +42,12 @@ object RenameJob {
       job.setOutputValueClass(classOf[BytesWritable])
 
       /* input */
-      val mappers = inputs.map(p => (classOf[RenameMapper], p.value))
-      mappers.foreach({ case (clazz, factsetGlob) =>
-        factsetGlob.paths.foreach { p =>
-          println(s"Input path: ${p.path}")
-          MultipleInputs.addInputPath(job, new Path(p.path), classOf[SequenceFileInputFormat[_, _]], clazz)
-        }
+      inputs.sets.foreach({
+        case Prioritized(_, FactsetDataset(factset)) =>
+          val glob = new Path(root, s"factsets/${factset.id.render}/*/*/*/*")
+          MultipleInputs.addInputPath(job, glob, classOf[SequenceFileInputFormat[_, _]], classOf[RenameMapper])
+        case Prioritized(_, SnapshotDataset(factset)) =>
+          ()
       })
 
       /* output */
@@ -67,7 +66,7 @@ object RenameJob {
       ctx.thriftCache.push(job, SnapshotJob.Keys.FactsetLookup, SnapshotJob.priorityTable(inputs))
       ctx.thriftCache.push(job, ReducerLookups.Keys.NamespaceLookup, reducerLookups.namespaces)
       ctx.thriftCache.push(job, ReducerLookups.Keys.ReducerLookup,   reducerLookups.reducers)
-      ctx.thriftCache.push(job, SnapshotJob.Keys.FactsetVersionLookup, SnapshotJob.versionTable(inputs.map(_.value)))
+      ctx.thriftCache.push(job, SnapshotJob.Keys.FactsetVersionLookup, SnapshotJob.versionTable(inputs))
 
       /* run job */
       if (!job.waitForCompletion(true))

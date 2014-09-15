@@ -3,7 +3,7 @@ package com.ambiata.ivory.operation.ingestion
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.core.thrift.ThriftSerialiser
 import com.ambiata.ivory.scoobi.{FactFormats, SequenceUtil, TestConfigurations}
-import com.ambiata.ivory.storage.legacy.IvoryStorage._
+import com.ambiata.ivory.storage.legacy._, IvoryStorage._
 import FactFormats._
 import com.ambiata.mundane.control._
 import com.ambiata.mundane.io.MemoryConversions._
@@ -16,11 +16,11 @@ import org.specs2._
 import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.{MustThrownMatchers, FileMatchers, ThrownExpectations}
 import org.specs2.specification._
-import scalaz.\/-
+import scalaz.{Name => _, DList => _, _}
 import scalaz.effect.IO
 
 class EavtTextImporterSpec extends Specification with ThrownExpectations with FileMatchers with FixtureExample[Setup] { def is = s2"""
- 
+
  The Eavt text import can import text or Thrift facts
 
   MR job runs and creates expected text data   $text
@@ -92,7 +92,7 @@ class Setup(val directory: FilePath) extends MustThrownMatchers {
       writer => ResultT.safe(expected.map(Conversion.fact2thrift).map(fact => serializer.toBytes(fact)).foreach(writer))
     }.run(sc) must beOk
   }
-  
+
   def saveTextInputFileWithErrors = {
     val raw = List("pid1|fid1|v1|2012-10-01 00:00:10",
                    "pid1|fid2|x|2012-10-15 00:00:20",
@@ -115,8 +115,10 @@ class Setup(val directory: FilePath) extends MustThrownMatchers {
     action must beOk
   }
 
-  def theImportMustBeOk = 
-    factsFromIvoryFactset(repository, FactsetId.initial).map(_.run.collect { case \/-(r) => r }).run(sc) must beOkLike(_.toSet must_== expected.toSet)
+  def theImportMustBeOk =
+    PartitionFactThriftStorageV2
+     .loadScoobiFromPaths(repository.factset(FactsetId.initial) :: Nil)
+     .map(_.run.collect { case \/-(r) => r }).run(sc) must beOkLike(_.toSet must_== expected.toSet)
 
   def thereMustBeErrors =
     valueFromSequenceFile[ParseError]((directory </> "errors").path).run(sc) must not(beEmpty)

@@ -4,13 +4,12 @@ import com.ambiata.ivory.core._
 import com.nicta.scoobi.Scoobi._
 import scalaz.{DList => _, Value => _, _}, Scalaz._
 import org.apache.hadoop.fs.Path
-import com.ambiata.mundane.io._
+//import com.ambiata.mundane.io._
 
 import com.ambiata.ivory.core._
-import com.ambiata.poacher.scoobi._
-import com.ambiata.ivory.scoobi._, WireFormats._, FactFormats._
-import com.ambiata.ivory.storage.legacy.IvoryStorage._
-import com.ambiata.ivory.storage.metadata.Metadata._
+//import com.ambiata.poacher.scoobi._
+//import com.ambiata.ivory.scoobi._, WireFormats._, FactFormats._
+//import com.ambiata.ivory.storage.metadata.Metadata._
 
 sealed trait Validate {
   val counterGroup = "VALIDATION"
@@ -29,17 +28,17 @@ sealed trait Validate {
       counter <- Option(grp.findCounter(name))
     } yield counter.getValue).getOrElse(0)
 
-  def exec(output: Path): ScoobiAction[Long] = for {
-    sc <- ScoobiAction.scoobiConfiguration
-    j  <- scoobiJob
-    _  <- ScoobiAction.safe(j.toTextFile(output.toString, overwrite = true).persist(sc))
-  } yield getCounter(parseErrorCounterName)(sc) + getCounter(encodingErrorCounterName)(sc)
+//  def exec(output: Path): ScoobiAction[Long] = for {
+//    sc <- ScoobiAction.scoobiConfiguration
+//    j  <- scoobiJob
+//    _  <- ScoobiAction.safe(j.toTextFile(output.toString, overwrite = true).persist(sc))
+//  } yield getCounter(parseErrorCounterName)(sc) + getCounter(encodingErrorCounterName)(sc)
 
-  def scoobiJob: ScoobiAction[DList[String]]
+//  def scoobiJob: ScoobiAction[DList[String]]
 }
 
-case class ValidateStoreHdfs(repo: HdfsRepository, store: FeatureStore, dict: Dictionary, includeOverridden: Boolean) extends Validate {
-  def scoobiJob: ScoobiAction[DList[String]] =
+case class ValidateStoreHdfs(repo: HdfsRepository, store: FeatureStore, dict: Dictionary, includeOverridden: Boolean) extends Validate {/*
+  def scoobiJobx: ScoobiAction[DList[String]] =
     factsFromIvoryStore(repo, store).map(input => {
       val errors: DList[String] = countRecords(input.collect {
         case -\/(e) => e.message
@@ -71,11 +70,11 @@ case class ValidateStoreHdfs(repo: HdfsRepository, store: FeatureStore, dict: Di
       }, counterGroup, encodingErrorCounterName)
 
       errors ++ validationErrors
-    })
+    })*/
 }
 
 case class ValidateFactSetHdfs(repo: HdfsRepository, factset: FactsetId, dict: Dictionary) extends Validate {
-
+/*
   def scoobiJob: ScoobiAction[DList[String]] =
     factsFromIvoryFactset(repo, factset).map(input => {
       val errors: DList[String] = countRecords(input.collect {
@@ -93,11 +92,11 @@ case class ValidateFactSetHdfs(repo: HdfsRepository, factset: FactsetId, dict: D
       }, counterGroup, encodingErrorCounterName)
 
       errors ++ validationErrors
-    })
+    })*/
 }
 
 object Validate {
-
+/*
   def validateHdfsStore(repoPath: Path, store: FeatureStoreId, output: Path, includeOverridden: Boolean): ScoobiAction[Long] = for {
     r <- ScoobiAction.scoobiConfiguration.map(sc => Repository.fromHdfsPath(repoPath.toString.toFilePath, sc))
     d <- ScoobiAction.fromResultTIO(dictionaryFromIvory(r))
@@ -110,7 +109,7 @@ object Validate {
     d <- ScoobiAction.fromResultTIO(dictionaryFromIvory(r))
     c <- ValidateFactSetHdfs(r, factset, d).exec(output)
   } yield c
-
+*/
   def validateFact(fact: Fact, dict: Dictionary): Validation[String, Fact] =
     dict.byFeatureId.get(fact.featureId)
       .map {

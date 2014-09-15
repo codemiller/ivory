@@ -7,19 +7,20 @@ import com.ambiata.ivory.storage.fact._
 import com.ambiata.ivory.storage.legacy.IvoryStorage
 import com.ambiata.ivory.storage.lookup.ReducerLookups
 import com.ambiata.ivory.storage.metadata.Metadata
+import com.ambiata.ivory.storage.plan._
 import com.ambiata.mundane.control._
 import com.ambiata.mundane.io.BytesQuantity
 import com.nicta.scoobi.impl.ScoobiConfiguration
 import org.apache.hadoop.conf.Configuration
 
-import scalaz._, Scalaz._, effect._
+import scalaz.{Name => _, _}, Scalaz._, effect._
 
 object Rename {
 
   def rename(mapping: RenameMapping, reducerSize: BytesQuantity): IvoryTIO[(FactsetId, FeatureStore, RenameStats)] = for {
-    globs        <- prepareGlobsFromLatestStore(mapping)
-    lookups      <- prepareLookups(mapping, globs.map(_.value.factset), reducerSize)
-    renameResult <- renameWithFactsets(mapping, globs, lookups)
+    datasets     <- findDatasetsInLatestStore(mapping)
+    lookups      <- prepareLookups(mapping, datasets.sets.collect({ case (Prioritized(_, FactsetDataset(fs))) => fs.id }), reducerSize)
+    renameResult <- renameWithFactsets(mapping, datasets, lookups)
     (fsid, stats) = renameResult
     sid          <- Metadata.incrementFeatureStore(fsid)
   } yield (fsid, sid, stats)
@@ -35,20 +36,19 @@ object Rename {
     lookup      = ReducerLookups.createLookups(subdict, partitions, reducerSize)
   } yield lookup
 
-  def prepareGlobsFromLatestStore(mapping: RenameMapping): IvoryTIO[List[Prioritized[FactsetGlob]]] = for {
+  def findDatasetsInLatestStore(mapping: RenameMapping): IvoryTIO[Datasets] = for {
     repository <- IvoryT.repository[ResultTIO]
     storeIdO   <- Metadata.latestFeatureStoreIdT
     storeId    <- fromResultT(_ => ResultT.fromOption[IO, FeatureStoreId](storeIdO, "Repository doesn't yet contain a store"))
     store      <- Metadata.featureStoreFromIvoryT(storeId)
-    inputs     <- fromResultT(FeatureStoreGlob.filter(_, store, p => mapping.mapping.exists(_._1.namespace == p.namespace)))
-  } yield inputs.globs
+  } yield RenamePlanner.plan(store, mapping.oldFeatures.map(_.namespace).toSet.toList)
 
-  def renameWithFactsets(mapping: RenameMapping, inputs: List[Prioritized[FactsetGlob]], reducerLookups: ReducerLookups): IvoryTIO[(FactsetId, RenameStats)] = for {
+  def renameWithFactsets(mapping: RenameMapping, inputs: Datasets, reducerLookups: ReducerLookups): IvoryTIO[(FactsetId, RenameStats)] = for {
     factset    <- IvoryT.fromResultTIO(repository => Factsets.allocateFactsetId(repository))
     repository <- IvoryT.repository[ResultTIO]
     output      = repository.factset(factset).toHdfs
     hdfs       <- getHdfs
-    stats      <- fromResultT(_ => RenameJob.run(mapping, inputs, output, reducerLookups, hdfs.codec).run(ScoobiConfiguration(hdfs.configuration)))
+    stats      <- fromResultT(_ => RenameJob.run(mapping, hdfs.root.toHdfs, inputs, output, reducerLookups, hdfs.codec).run(ScoobiConfiguration(hdfs.configuration)))
     _          <- IvoryStorage.writeFactsetVersionI(List(factset))
   } yield factset -> stats
 

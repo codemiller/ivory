@@ -2,7 +2,7 @@ package com.ambiata.ivory.operation.rename
 
 import com.ambiata.ivory.core._, Arbitraries._
 import com.ambiata.ivory.storage.control._
-import com.ambiata.ivory.storage.legacy.IvoryStorage
+import com.ambiata.ivory.storage.legacy._
 import com.ambiata.ivory.storage.repository.RepositoryBuilder
 import com.ambiata.mundane.control._
 import com.ambiata.mundane.io.MemoryConversions._
@@ -93,7 +93,10 @@ Rename
         _      <- IvoryT.fromResultTIO(_ => RepositoryBuilder.createRepo(repo, dictionary, input.map(_.toList)))
         result <- Rename.rename(mapping, 10.mb)
         sc = repo.scoobiConfiguration
-        facts  <- IvoryT.fromResultT(IvoryStorage.factsFromIvoryFactset(_, result._1).run(sc).map(_.run(sc)))
+        facts  <- IvoryT.fromResultTIO(_ =>
+          PartitionFactThriftStorageV2
+           .loadScoobiFromPaths(repo.factset(result._1) :: Nil)
+           .run(sc).map(_.run(sc)))
       } yield (result._3, facts.flatMap(_.toOption))).run(IvoryRead.testing(repo))
     }
 }

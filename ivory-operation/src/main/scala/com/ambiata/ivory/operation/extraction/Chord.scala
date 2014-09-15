@@ -21,7 +21,6 @@ import com.ambiata.ivory.operation.validation._
 import com.ambiata.poacher.hdfs._
 import Entities._
 import com.ambiata.ivory.scoobi._
-import scala.collection.JavaConversions._
 
 /**
  * A Chord is the extraction of feature values for some entities at some dates
@@ -141,25 +140,13 @@ object Chord {
    * Read facts from a FeatureStore, up to a given date
    * If a FeatureStore snapshot is given we use it to retrieve the latest values
    */
-  def readFacts(repository: Repository, datasets: Datasets, latestDate: Date): ScoobiAction[DList[(Priority, SnapshotId \/ FactsetId, Fact)]] = {
-    featureStoreSnapshot match {
-      case None =>
-        factsFromIvoryStoreTo(repository, featureStore, latestDate).failError("cannot read facts")
-          .map(_.map { case (p, fid, f) => (p, fid.right[SnapshotId], f) })
-
-      case Some(snapshot) =>
-        val path          =  repository.snapshot(snapshot.id).toHdfs
-        val newFactsets   =  featureStore diff snapshot.store
-
-        for {
-          oldFacts      <- factsFromIvoryStoreBetween(repository, snapshot.store, snapshot.date, latestDate).exitOnParseError
-          _             <- ScoobiAction.log(s"Reading factsets up to '$latestDate'\n${newFactsets.factsets}")
-          newFacts      <- factsFromIvoryStoreTo(repository, newFactsets, latestDate).exitOnParseError
-          factsetFacts  =  (oldFacts ++ newFacts).map { case (p, fid, f) => (p, fid.right[SnapshotId], f) }
-          snapshotFacts <- factsFromPath(path).exitOnParseError.map(_.map((Priority.Max, snapshot.id.left[FactsetId], _)))
-        } yield factsetFacts ++ snapshotFacts
-    }
-  }
+  def readFacts(repository: Repository, datasets: Datasets, latestDate: Date): ScoobiAction[DList[(Priority, SnapshotId \/ FactsetId, Fact)]] = ScoobiAction.scoobiConfiguration.map(sc =>
+    datasets.sets.foldLeft(DList[(Priority, SnapshotId \/ FactsetId, Fact)]())((acc, prioritized) => prioritized.value match {
+      case FactsetDataset(factset) =>
+        ???
+      case SnapshotDataset(snapshot) =>
+        ???
+    }))
 
   private def factsFromPath(path: Path): ScoobiAction[DList[ParseError \/ Fact]] =
     ScoobiAction.scoobiConfiguration.map(sc => FlatFactThriftLoader(path.toString).loadScoobi(sc))

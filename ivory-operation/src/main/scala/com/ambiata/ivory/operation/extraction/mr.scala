@@ -35,7 +35,7 @@ object SnapshotJob {
     conf     <- Hdfs.configuration
     inputs   = datasets.byPriority.sets.map(_.map({
       case FactsetDataset(factset) =>
-        new Path(new Path(root, factset.id.render), "*/*/*/*") -> classOf[SnapshotFactsetMapper]
+        new Path(root, s"factsets/${factset.id.render}/*/*/*/*") -> classOf[SnapshotFactsetMapper]
       case SnapshotDataset(snapshot) =>
         new Path(root, snapshot.id.render) -> classOf[SnapshotIncrementalMapper]
     }))
@@ -98,13 +98,15 @@ object SnapshotJob {
 
   def priorityTable(datasets: Datasets): FactsetLookup = {
     val lookup = new FactsetLookup
-    globs.foreach(p => lookup.putToPriorities(p.value.factset.render, p.priority.toShort))
+    ???
+///    globs.foreach(p => lookup.putToPriorities(p.value.factset.render, p.priority.toShort))
     lookup
   }
 
   def versionTable(datasets: Datasets): FactsetVersionLookup = {
     val lookup = new FactsetVersionLookup
-    globs.foreach(g => lookup.putToVersions(g.factset.render, g.version.toByte))
+    ???
+//    globs.foreach(g => lookup.putToVersions(g.factset.render, g.version.toByte))
     lookup
   }
 
