@@ -58,7 +58,8 @@ object Chord {
       outputPath           =  (outputStore.base </> outputRef.path).toHdfs
       _                    <- serialiseEntities(entities, chordRef)
       dictionary           <- dictionaryFromIvory(repository)
-      datasets             <- ChordPlanner.plan(repository, entities)
+      // FIX MTH WIP.
+      datasets             <- ChordPlanner.plan[ResultTIO](entities)
       _                    <- chordScoobiJob(hr, dictionary, datasets, chordRef, entities.latestDate, outputPath, hr.codec).run(hr.scoobiConfiguration)
     } yield ()
   }

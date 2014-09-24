@@ -400,4 +400,7 @@ object Arbitraries extends arbitraries.ArbitrariesDictionary {
 
   implicit def DateOffsetArbitrary: Arbitrary[DateOffset] =
     Arbitrary(genDateOffset)
+
+  implicit def EntitiesArbitrary: Arbitrary[Entities] =
+    ???
 }

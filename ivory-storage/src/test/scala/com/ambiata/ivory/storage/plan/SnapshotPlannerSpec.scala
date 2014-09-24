@@ -1,14 +1,10 @@
 package com.ambiata.ivory.storage.plan
 
+import com.ambiata.ivory.core._, Arbitraries._
+
 import org.specs2._
-/*
- * import com.ambiata.ivory.core._
-
-
 import org.scalacheck._, Arbitrary._
-import com.ambiata.ivory.core.Arbitraries._
-import com.ambiata.ivory.storage.Arbitraries._
-*/
+
 object SnapshotPlannerSpec extends Specification with ScalaCheck { def is = s2"""
 
   Planner must satisfy the following rules:
@@ -36,20 +32,47 @@ object SnapshotPlannerSpec extends Specification with ScalaCheck { def is = s2""
          previous Snapshot (sn) and apply rule 3 to s1 and sn, or apply
          rule 4.                                                                """!rule5}
 
-"""
+    Attempting to build a dataset form a snapshot:
+      Never build a dataset if the snapshot store is not a subset of the current store    $subset
+      Never include a snpashot from the future                                            $future
+      When sucessful, output datasets must not incliude any date after 'at' date          $snapshot
 
+    No valid snapshot Fallback behaviour:
+      Output datasets must not include any date after 'at' date                           $fallback
+
+"""
   def rule1 =
-    false
+    pending
 
   def rule2 =
-    false
+    pending
 
   def rule3 =
-    false
+    pending
 
   def rule4 =
-    false
+    pending
 
   def rule5 =
-    false
+    pending
+
+  def subset = prop((at: Date, store: FeatureStore, snapshot: Snapshot) => !snapshot.store.subsetOf(store) ==>
+    !SnapshotPlanner.attemptWithSnapshot(at, store, snapshot).isDefined)
+
+  def future = prop((at: Date, store: FeatureStore, snapshot: Snapshot) => snapshot.date.isAfter(at) ==>
+    !SnapshotPlanner.attemptWithSnapshot(at, store, snapshot).isDefined)
+
+  def snapshot = prop((at: Date, store: FeatureStore, snapshot: Snapshot) => (snapshot.date.isBeforeOrEqual(at) && snapshot.store.subsetOf(store)) ==>
+    SnapshotPlanner.attemptWithSnapshot(at, store, snapshot).exists(allBefore(at)))
+
+  def fallback = prop((at: Date, store: FeatureStore) =>
+    allBefore(at) { SnapshotPlanner.fallback(at, store) })
+
+  def allBefore(at: Date): Datasets => Boolean =
+    datasets => datasets.sets.forall({
+      case Prioritized(_, FactsetDataset(factset)) =>
+        factset.partitions.forall(_.date.isBeforeOrEqual(at))
+      case Prioritized(_, SnapshotDataset(snapshot)) =>
+        snapshot.date.isBeforeOrEqual(at)
+    })
 }

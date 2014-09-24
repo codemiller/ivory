@@ -5,8 +5,11 @@ import org.joda.time.LocalDate
 import com.ambiata.mundane.parse.ListParser
 
 class Priority private(val underlying: Short) extends AnyVal {
-  def toShort =
+  def toShort: Short =
     underlying
+
+  def next: Option[Priority] =
+    Priority.parseInt(underlying + 1)
 
   override def toString: String =
     s"Priority($underlying)"

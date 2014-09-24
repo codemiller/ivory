@@ -2,7 +2,7 @@ package com.ambiata.ivory.storage.legacy
 
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.data.{IdentifierStorage, StoreDataUtil}
-import com.ambiata.ivory.storage.fact.FeatureStoreGlob
+//import com.ambiata.ivory.storage.fact.FeatureStoreGlob
 import com.ambiata.ivory.storage.metadata._
 
 import com.ambiata.mundane.control._

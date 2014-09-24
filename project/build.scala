@@ -65,7 +65,7 @@ object build extends Build {
   , settings = standardSettings ++ lib("api") ++ mimaDefaultSettings ++ Seq[Settings](
       name := "ivory-api"
     , previousArtifact := Some("com.ambiata" %% "ivory-api" % "1.0.0-cdh5-20140703185823-2efc9c3")
-    ) ++ Seq[Settings](libraryDependencies ++= depend.scalaz ++ depend.hadoop(version.value) ++ depend.poacher(version.value) ++ depend.slf4j)
+    ) ++ Seq[Settings](libraryDependencies ++= depend.scalaz ++ depend.hadoop(version.value) ++ depend.scoobi(version.value) ++ depend.poacher(version.value) ++ depend.slf4j)
   )
   .dependsOn(operation)
 
@@ -130,7 +130,7 @@ object build extends Build {
       -keepclassmembers class * { ** serialVersionUID; }
     """
     , javaOptions in (Proguard, ProguardKeys.proguard) := Seq("-Xmx2G")
-    ) ++ Seq[Settings](libraryDependencies ++= depend.scopt ++ depend.scalaz ++ depend.hadoop(version.value)  ++ depend.poacher(version.value) ++ depend.specs2 ++ depend.slf4j)
+    ) ++ Seq[Settings](libraryDependencies ++= depend.scopt ++ depend.scalaz ++ depend.hadoop(version.value)  ++ depend.scoobi(version.value) ++ depend.poacher(version.value) ++ depend.specs2 ++ depend.slf4j)
       ++ addArtifact(Artifact("ivory", "dist", "tgz"), packageZipTarball in Universal)
       ++ addArtifact(Artifact("ivory", "dist", "zip"), packageBin in Universal)
   )
@@ -163,7 +163,7 @@ object build extends Build {
   , base = file("ivory-operation")
   , settings = standardSettings ++ lib("operation") ++ Seq[Settings](
       name := "ivory-operation"
-    ) ++ Seq[Settings](libraryDependencies ++= depend.scalaz ++ depend.joda ++ depend.hadoop(version.value) ++ depend.poacher(version.value) ++ depend.specs2 ++ depend.mundane)
+    ) ++ Seq[Settings](libraryDependencies ++= depend.scalaz ++ depend.joda ++ depend.hadoop(version.value) ++ depend.scoobi(version.value) ++ depend.poacher(version.value) ++ depend.specs2 ++ depend.mundane)
   )
   .dependsOn(core, scoobi, storage, mr, core % "test->test", scoobi % "test->test", storage % "test->test")
 
@@ -172,7 +172,7 @@ object build extends Build {
   , base = file("ivory-mr")
   , settings = standardSettings ++ lib("mr") ++ Seq[Settings](
       name := "ivory-mr"
-    ) ++ Seq[Settings](libraryDependencies ++= depend.thrift ++ depend.mundane ++ depend.scalaz ++ depend.specs2 ++ depend.poacher(version.value) ++ depend.hadoop(version.value))
+    ) ++ Seq[Settings](libraryDependencies ++= depend.thrift ++ depend.mundane ++ depend.scalaz ++ depend.specs2 ++ depend.hadoop(version.value) ++ depend.scoobi(version.value) ++ depend.poacher(version.value))
   )
   .dependsOn(core, core % "test->test")
 
@@ -190,7 +190,7 @@ object build extends Build {
   , base = file("ivory-scoobi")
   , settings = standardSettings ++ lib("scoobi") ++ Seq[Settings](
       name := "ivory-scoobi"
-    ) ++ Seq[Settings](libraryDependencies ++= depend.scalaz ++ depend.poacher(version.value) ++ depend.scoobi(version.value) ++ depend.saws ++ depend.specs2 ++ depend.mundane)
+    ) ++ Seq[Settings](libraryDependencies ++= depend.scalaz ++ depend.hadoop(version.value) ++ depend.scoobi(version.value) ++ depend.poacher(version.value) ++ depend.saws ++ depend.specs2 ++ depend.mundane)
   )
 .dependsOn(core, core % "test->test")
 
@@ -199,7 +199,7 @@ object build extends Build {
   , base = file("ivory-storage")
   , settings = standardSettings ++ lib("storage") ++ Seq[Settings](
       name := "ivory-storage"
-    ) ++ Seq[Settings](libraryDependencies ++= depend.scalaz  ++ depend.scoobi(version.value) ++ depend.poacher(version.value) ++ depend.specs2 ++ depend.saws)
+    ) ++ Seq[Settings](libraryDependencies ++= depend.scalaz  ++ depend.hadoop(version.value) ++ depend.scoobi(version.value) ++ depend.poacher(version.value) ++ depend.specs2 ++ depend.saws)
   )
   .dependsOn(core, data, scoobi, mr, core % "test->test",  scoobi % "test->test", data % "test->test")
 
@@ -245,7 +245,7 @@ object build extends Build {
                                Seq(Tests.Argument("--", "exclude", "aws")))
   ) ++ instrumentSettings ++ Seq(
     ScoverageKeys.highlighting := false
-  , ScoverageKeys.excludedPackages in ScoverageCompile := "com.ambiata.ivory.core.thrift\..*"
+  , ScoverageKeys.excludedPackages in ScoverageCompile := "com.ambiata.ivory.core.thrift\\..*"
   )
 
   lazy val prompt = shellPrompt in ThisBuild := { state =>
