@@ -1,6 +1,24 @@
 package com.ambiata.ivory.core
 
-sealed trait Dataset
+sealed trait Dataset {
+  def fold[X](
+    factset: Factset => X
+  , snapshot: Snapshot => X
+  ): X = this match {
+    case FactsetDataset(f) => factset(f)
+    case SnapshotDataset(s) => snapshot(s)
+  }
+
+  def isFactset: Boolean =
+    fold(_ => true, _ => false)
+
+  def isSnapshot: Boolean =
+    fold(_ => false, _ => true)
+
+  def isEmpty: Boolean =
+    fold(_.partitions.isEmpty, _ => false)
+}
+
 case class FactsetDataset(factset: Factset) extends Dataset
 case class SnapshotDataset(snapshot: Snapshot) extends Dataset
 

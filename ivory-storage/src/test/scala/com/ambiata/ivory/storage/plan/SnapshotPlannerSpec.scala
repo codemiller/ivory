@@ -5,74 +5,225 @@ import com.ambiata.ivory.core._, Arbitraries._
 import org.specs2._
 import org.scalacheck._, Arbitrary._
 
+import scalaz._, Scalaz._
+
 object SnapshotPlannerSpec extends Specification with ScalaCheck { def is = s2"""
 
-  Planner must satisfy the following rules:
-    ${"""1. If the latest FeatureStore equals the closest Snapshot
-         FeatureStore AND the given Date equals the Snapshot Date,
-         return only the SnapshotDataset.                                       """!rule1}
-    ${"""2. If the latest FeatureStore (s1) equals the closest Snapshot
-         FeatureStore (s2) AND the given Date (t1) does not equal the
-         Snapshot Date (t2), return a FactsetDataset for each of the
-         factsets in FeatureStore s1 containing partitions from t2 up to
-         t1 along with the SnapshotDataset.                                     """!rule2}
-    ${"""3. If the latest FeatureStore (s1) does not equal the closest
-         Snapshot FeatureStore (s2), return a FactsetDataset for each
-         factset which does not appear in both s1 and s2, containing
-         partitions up to the given Date (t1). If the Snapshot Date (t2)
-         does not equal the given Date (t1), also return a FactsetDataset
-         for each factset which intersets s1 and s2, containing partitions
-         from t2 up to t1. Also return the SnapshotDataset.                     """!rule3}
-    ${"""4. If there are no Snapshot Dates which are less then or equal to
-         the given Date (t1), or the given incremental flag is set to false,
-         return a FactsetDataset for each factset in the latest FeatureStore
-         containing all partitions up to t1.                                    """!rule4}
-    ${"""5. If the latest FeatureStore (s1) does not contain ALL of the
-         factsets in the latest Snapshot FeatureStore (s2), either find a
-         previous Snapshot (sn) and apply rule 3 to s1 and sn, or apply
-         rule 4.                                                                """!rule5}
+SnapshotPlanner
+===============
 
-    Attempting to build a dataset form a snapshot:
-      Never build a dataset if the snapshot store is not a subset of the current store    $subset
-      Never include a snpashot from the future                                            $future
-      When sucessful, output datasets must not incliude any date after 'at' date          $snapshot
 
-    No valid snapshot Fallback behaviour:
-      Output datasets must not include any date after 'at' date                           $fallback
+Scenario 1 - Planning a Snapshot, where there is a valid incremental snapshot
+-----------------------------------------------------------------------------
+
+  ${"""Given there is a valid snapshot, there should be exactly one snapshot in the plan
+    dataset.
+    """!                                                                                    scenario1.solidarity}
+
+  ${"""When the 'at' date and the current feature store matches an incremental snapshot
+    date/store, the plan dataset should only contain the snapshot, i.e. no fact sets.
+    """!                                                                                    scenario1.exact}
+
+  ${"""There should never be factset partitions in the plan dataset before any snapshot
+    included in the plan.
+    """!                                                                                    scenario1.optimal}
+
+  ${"""The selected snapshot should always be the _latest_ valid snapshot.
+    """!                                                                                    scenario1.latest}
+
+  ${"""All partitions at or before the snapshot date and after the snapshot date must be
+    included (and no others).
+    """!                                                                                    scenario1.soundness}
+
+
+Scenario 2 - Planning a Snapshot, where there is _no_ valid incremental snapshot
+--------------------------------------------------------------------------------
+
+  ${"""Given there are no valid snapshots, there should only be factsets in the
+    plan dataset.
+    """!                                                                                    scenario2.factsets}
+
+  ${"""All partitions at or before the snapshot date must be included.
+    """!                                                                                    scenario2.soundness}
+
+
+Scenario 3 - Planning a Snapshot, independent of incremental snapshot state
+---------------------------------------------------------------------------
+
+  ${"""There should never be partitions in the plan dataset included after the snapshot
+    date.
+    """!                                                                                    scenario3.optimal}
+
+
+Support 1 - Attempting to build a dataset form a snapshot
+---------------------------------------------------------
+
+  ${"""Never build a dataset if the snapshot store is not a subset of the current store.
+    """!                                                                                    support1.subset}
+
+  ${"""Never include a snapshot from a future date.
+    """!                                                                                    support1.future}
+
+  ${"""When sucessful, output datasets must not include any date after 'at' date.
+    """!                                                                                    support1.snapshot}
+
+
+Support 2 - Determining if a given snapshot is valid
+----------------------------------------------------
+
+  ${"""If the snapshot date is before stored snapshot date, it is always invalid.
+    """!                                                                                    support2.future}
+
+  ${"""If there are factsets in the snapshot not in the store, it is always invalid.
+    """!                                                                                    support2.disjoint}
+
+  ${"""If the snapshot date is equal to stored snapshot date and valid store, is is valid.
+    """!                                                                                    support2.now}
+
+  ${"""If the snapshot date is after stored snapshot date and valid store, is is valid.
+    """!                                                                                    support2.past}
+
+
+Support 3 - Fallback behaviour when there is no incremental snapshot to load from
+---------------------------------------------------------------------------------
+
+  ${"""Output datasets must not include any date after 'at' date.
+    """!                                                                                    support3.soundness}
 
 """
-  def rule1 =
-    pending
 
-  def rule2 =
-    pending
+  object scenario1 {
 
-  def rule3 =
-    pending
+    def solidarity =
+      prop((scenario: RepositoryScenario) => validSnapshot(scenario) ==> {
+        SnapshotPlanner.plan(scenario.at, scenario.store, scenario.metadata, source(scenario)) must beSome((datasets: Datasets) =>
+          countSnapshots(datasets) must_== 1) })
 
-  def rule4 =
-    pending
+    def exact =
+      prop((snapshot: Snapshot) => {
+        val scenario = RepositoryScenario(snapshot.store, List(snapshot), snapshot.date, snapshot.date)
+        SnapshotPlanner.plan(snapshot.date, scenario.store, scenario.metadata, source(scenario)) must beSome(
+          Datasets(List(Prioritized(Priority.Max, SnapshotDataset(snapshot))))) })
 
-  def rule5 =
-    pending
+    def optimal =
+      prop((scenario: RepositoryScenario) => validSnapshot(scenario) ==> {
+        SnapshotPlanner.plan(scenario.at, scenario.store, scenario.metadata, source(scenario)) must beSome((datasets: Datasets) =>
+          findSnapshotDate(datasets).exists(date =>
+            factsetsAfter(date)(datasets))) })
 
-  def subset = prop((at: Date, store: FeatureStore, snapshot: Snapshot) => !snapshot.store.subsetOf(store) ==>
-    !SnapshotPlanner.attemptWithSnapshot(at, store, snapshot).isDefined)
+    def latest =
+      prop((scenario: RepositoryScenario) => validSnapshot(scenario) ==> {
+        SnapshotPlanner.plan(scenario.at, scenario.store, scenario.metadata, source(scenario)) must beSome((datasets: Datasets) =>
+          findSnapshotDate(datasets).exists(date =>
+            scenario.snapshots.filter(SnapshotPlanner.isValid(scenario.at, scenario.store, _)).forall(_.date <= date))) })
 
-  def future = prop((at: Date, store: FeatureStore, snapshot: Snapshot) => snapshot.date.isAfter(at) ==>
-    !SnapshotPlanner.attemptWithSnapshot(at, store, snapshot).isDefined)
+    def soundness =
+      prop((scenario: RepositoryScenario) => validSnapshot(scenario) ==> {
+        SnapshotPlanner.plan(scenario.at, scenario.store, scenario.metadata, source(scenario)) must beSome((datasets: Datasets) => {
+          findSnapshotDate(datasets).exists(date =>
+            allPartitions(datasets).sorted == scenario.partitions.filter(partition =>
+              partition.date > date && partition.date <= scenario.at)) }) })
+  }
 
-  def snapshot = prop((at: Date, store: FeatureStore, snapshot: Snapshot) => (snapshot.date.isBeforeOrEqual(at) && snapshot.store.subsetOf(store)) ==>
-    SnapshotPlanner.attemptWithSnapshot(at, store, snapshot).exists(allBefore(at)))
+  object scenario2 {
 
-  def fallback = prop((at: Date, store: FeatureStore) =>
-    allBefore(at) { SnapshotPlanner.fallback(at, store) })
+    def factsets =
+      prop((scenario: RepositoryScenario) =>
+        SnapshotPlanner.plan(scenario.at, scenario.store, Nil, source(scenario)) must beSome((datasets: Datasets) =>
+          countSnapshots(datasets) must_== 0) )
+
+    def soundness =
+      prop((scenario: RepositoryScenario) =>
+        SnapshotPlanner.plan(scenario.at, scenario.store, Nil, source(scenario)) must beSome((datasets: Datasets) =>
+          allPartitions(datasets).sorted must_== scenario.partitions.filter(_.date <= scenario.at)))
+  }
+
+  object scenario3 {
+
+    def optimal =
+      prop((scenario: RepositoryScenario) =>
+        SnapshotPlanner.plan(scenario.at, scenario.store, scenario.metadata, source(scenario)) must beSome(
+          allBefore(scenario.at)))
+  }
+
+  object support1 {
+
+    def subset =
+      prop((at: Date, store: FeatureStore, snapshot: Snapshot) => !snapshot.store.subsetOf(store) ==> {
+        !SnapshotPlanner.build(at, store, snapshot).isDefined })
+
+    def future =
+      prop((at: Date, store: FeatureStore, snapshot: Snapshot) => snapshot.date > at ==> {
+        !SnapshotPlanner.build(at, store, snapshot).isDefined })
+
+    def snapshot =
+      prop((at: Date, store: FeatureStore, snapshot: Snapshot) => (snapshot.date <= at && snapshot.store.subsetOf(store)) ==> {
+        SnapshotPlanner.build(at, store, snapshot).exists(allBefore(at)) })
+  }
+
+  object support2 {
+
+    def now =
+      prop((store: FeatureStore, snapshot: Snapshot) => snapshot.store.subsetOf(store) ==> {
+        SnapshotPlanner.isValid(snapshot.date, store, snapshot) must beTrue })
+
+    def past =
+      prop((at: Date, store: FeatureStore, snapshot: Snapshot) => (snapshot.store.subsetOf(store) && at > snapshot.date) ==> {
+        SnapshotPlanner.isValid(at, store, snapshot) must beTrue })
+
+    def future =
+      prop((at: Date, store: FeatureStore, snapshot: Snapshot) => at < snapshot.date ==> {
+        SnapshotPlanner.isValid(at, store, snapshot) must beFalse })
+
+    def disjoint =
+      prop((at: Date, store: FeatureStore, snapshot: Snapshot) => !snapshot.store.subsetOf(store) ==> {
+        SnapshotPlanner.isValid(at, store, snapshot) must beFalse })
+  }
+
+  object support3 {
+
+    def soundness =
+      prop((at: Date, store: FeatureStore) =>
+        allBefore(at) { SnapshotPlanner.fallback(at, store) })
+  }
+
+  def validSnapshot(scenario: RepositoryScenario): Boolean =
+    scenario.snapshots.exists(SnapshotPlanner.isValid(scenario.at, scenario.store, _))
+
+  def source(scenario: RepositoryScenario): Kleisli[Option, SnapshotId, Snapshot] =
+    Kleisli(id => scenario.snapshots.find(_.id == id))
 
   def allBefore(at: Date): Datasets => Boolean =
     datasets => datasets.sets.forall({
       case Prioritized(_, FactsetDataset(factset)) =>
-        factset.partitions.forall(_.date.isBeforeOrEqual(at))
+        factset.partitions.forall(_.date <= at)
       case Prioritized(_, SnapshotDataset(snapshot)) =>
-        snapshot.date.isBeforeOrEqual(at)
+        snapshot.date <= at
     })
+
+  def factsetsAfter(at: Date): Datasets => Boolean =
+    datasets => datasets.sets.forall({
+      case Prioritized(_, FactsetDataset(factset)) =>
+        factset.partitions.forall(_.date > at)
+      case Prioritized(_, SnapshotDataset(snapshot)) =>
+        true
+    })
+
+  def allPartitions(datasets: Datasets): List[Partition] =
+    datasets.sets.flatMap({
+      case Prioritized(_, FactsetDataset(factset)) =>
+        factset.partitions
+      case Prioritized(_, SnapshotDataset(snapshot)) =>
+        Nil
+    })
+
+  def findSnapshotDate(datasets: Datasets): Option[Date] =
+    datasets.sets.collect({
+      case Prioritized(_, SnapshotDataset(snapshot)) =>
+        snapshot.date
+    }).headOption
+
+  def countSnapshots(datasets: Datasets): Int =
+    datasets.sets.filter(_.value.isSnapshot).length
+
 }
