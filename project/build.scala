@@ -32,7 +32,7 @@ object build extends Build {
   /** this should only ever export _api_, DO NOT add things to this list */
   .dependsOn(api)
 
-  lazy val standardSettings = Defaults.coreDefaultSettings ++
+  lazy val standardSettings = Defaults.defaultSettings ++
                               projectSettings              ++
                               compilationSettings          ++
                               testingSettings              ++
@@ -50,7 +50,7 @@ object build extends Build {
   , publishArtifact in packageDoc := false
   // https://gist.github.com/djspiewak/976cd8ac65e20e136f05
   , unmanagedSourceDirectories in Compile += (sourceDirectory in Compile).value / s"scala-${scalaBinaryVersion.value}"
-  , updateOptions := updateOptions.value.withConsolidatedResolution(true)
+//  , updateOptions := updateOptions.value.withConsolidatedResolution(true)
   ) ++ Seq(prompt)
 
   def lib(name: String) =

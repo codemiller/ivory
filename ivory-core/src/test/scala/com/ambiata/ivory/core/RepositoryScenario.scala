@@ -19,6 +19,36 @@ case class RepositoryScenario(store: FeatureStore, snapshots: List[Snapshot], ep
 
   def partitions: List[Partition] =
     store.factsets.flatMap(_.value.partitions).sorted
+
+  override def toString = {
+    def partitions(ps: List[Partition]): String =
+      Partition.intervals(ps).groupBy(_._1.namespace).toList.map({
+        case (namespace, intervals) =>
+          val dates = intervals.map({ case (min, max) => s"      ${min.date.hyphenated}->${max.date.hyphenated}" }).mkString("\n")
+          s"    ${namespace}\n${dates}"
+      }).mkString("\n")
+
+    def renderFactset(factset: Prioritized[Factset]) =
+      s"""Factset(${factset.value.id.render}) @ ${factset.priority}
+         |${partitions(factset.value.partitions)}
+         |""".stripMargin
+
+    def renderSnapshot(snapshot: Snapshot) =
+      s"""Snapshot(${snapshot.id.render}) @ FeatureStore(${snapshot.store.id.render}) / ${snapshot.date.hyphenated}
+         |  ${snapshot.store.factsets.sorted.map(renderFactset).mkString("\n  ")}
+         |""".stripMargin
+
+    s"""Repository Scenario ============================================================
+       |
+       |Repository Epoch:                 ${epoch.hyphenated}
+       |Suggested Snapshot 'at' Date:     ${at.hyphenated}
+       |
+       |FeatureStore(${store.id.render})
+       |  ${store.factsets.sorted.map(renderFactset).mkString("\n  ")}
+       |
+       |${snapshots.map(renderSnapshot)}
+       |""".stripMargin
+  }
 }
 
 object RepositoryScenario {
@@ -27,7 +57,7 @@ object RepositoryScenario {
       epoch  <- genDate(Date(1900, 1, 1), Date(2100, 12, 31))
 
       // We will be generating 'span' days with of events (ingestions and/or snapshots).
-      span    <- Gen.choose(2, 5)
+      span    <- Gen.choose(2, 10)
 
       // The repository will contain 'n' different namespaces.
       n       <- Gen.choose(2, 4)
@@ -49,9 +79,12 @@ object RepositoryScenario {
       //  - potentiolly generate a snapshot for today (1 out of 2 chance)
       //  - increment the state of the current scenario to track the new snapshot and head of the feature store
       r       <- (1 to span).toList.foldLeftM(init)((acc, day) => for {
-        chance    <- Gen.choose(1, 10).map(_ < 5)
+        chance    <- Gen.choose(1, 10).map(_ < 3)
+        earliest  <- Gen.choose(1, day * span * 5)
+        latest    <- Gen.choose(1, day * span * 5)
+        chunk     <- Gen.choose(1, 2)
         today     =  addDays(acc.epoch, day)
-        store     =  nextStore(acc.store, names, today)
+        store     =  nextStore(acc.store, names, today, earliest, latest, chunk)
         snapshots =  nextSnapshots(store, acc.snapshots, today, chance)
       } yield RepositoryScenario(store, snapshots, acc.epoch, acc.at))
     } yield r)
@@ -62,13 +95,13 @@ object RepositoryScenario {
     snapshots ++ next.map(id => Snapshot(id, today, store)).filter(_ => create).toList
   }
 
-  def nextStore(store: FeatureStore, names: List[Name], today: Date): FeatureStore = (for {
+  def nextStore(store: FeatureStore, names: List[Name], today: Date, earliest: Int, latest: Int, chunk: Int): FeatureStore = (for {
     id        <- store.id.next
     priority  <- if (store.factsets.isEmpty) Priority.Min.some else store.factsets.map(_.priority).maximum.flatMap(_.next)
     factsetId <- if (store.factsets.isEmpty) FactsetId.initial.some else store.factsets.map(_.value.id).maximum.flatMap(_.next)
     factset   =  Factset(factsetId, for {
                    name <- names
-                   date <- List(today, takeDays(today, 1), addDays(today, 1))
+                   date <- (1 to earliest by chunk).toList.map(takeDays(today, _)) ++ List(today) ++ (1 to latest by chunk).toList.map(addDays(today, _))
                  } yield Partition(name, date))
     nu        =  List(Prioritized(priority, factset))
   } yield FeatureStore(id, store.factsets ++ nu)).getOrElse(store)

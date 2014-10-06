@@ -17,6 +17,9 @@ case class FeatureStore(id: FeatureStoreId, factsets: List[Prioritized[Factset]]
   def filterByDate(pred: Date => Boolean): FeatureStore =
     FeatureStore(id, factsets.map(_.map(_.filterByDate(pred))))
 
+  def filterByFactsetId(pred: FactsetId => Boolean): FeatureStore =
+    filter(factset => pred(factset.id))
+
   def filter(f: Factset => Boolean): FeatureStore =
     FeatureStore.fromList(id, factsets.collect({ case Prioritized(_, factset) if f(factset) => factset })).get
 

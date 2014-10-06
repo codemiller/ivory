@@ -27,8 +27,11 @@ object SnapshotPlanner {
    * the _minimal_ dataset required for the operation.
    */
   def build(at: Date, store: FeatureStore, snapshot: Snapshot): Option[Datasets] =
-    isValid(at, store, snapshot).option(
-      (Datasets(Dataset.prioritizedSnapshot(snapshot) :: Dataset.within(store, snapshot.date, at))).prune)
+    isValid(at, store, snapshot).option({
+      val included = store.unprioritizedIds.toSet
+      Datasets(Dataset.prioritizedSnapshot(snapshot) ::
+               Dataset.within(store, snapshot.date, at) :::
+               Dataset.to(store.filterByFactsetId(id => !included.contains(id)), at)).prune })
 
   /**
    * Determine if a given snapshot is valid for the specified snapshot 'at' date

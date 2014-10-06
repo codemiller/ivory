@@ -24,15 +24,16 @@ Scenario 1 - Planning a Snapshot, where there is a valid incremental snapshot
     date/store, the plan dataset should only contain the snapshot, i.e. no fact sets.
     """!                                                                                    scenario1.exact}
 
-  ${"""There should never be factset partitions in the plan dataset before any snapshot
-    included in the plan.
+  ${"""There must not be factset partitions in the plan dataset before any snapshot
+    included in the plan unless they are from a factset id not included in the store
+    from the incremental snapshot.
     """!                                                                                    scenario1.optimal}
 
   ${"""The selected snapshot should always be the _latest_ valid snapshot.
     """!                                                                                    scenario1.latest}
 
-  ${"""All partitions at or before the snapshot date and after the snapshot date must be
-    included (and no others).
+  ${"""All partitions at or before the snapshot 'at' date and after the incremental
+    snapshot date must be included (and no others).
     """!                                                                                    scenario1.soundness}
 
 
@@ -108,8 +109,17 @@ Support 3 - Fallback behaviour when there is no incremental snapshot to load fro
     def optimal =
       prop((scenario: RepositoryScenario) => validSnapshot(scenario) ==> {
         SnapshotPlanner.plan(scenario.at, scenario.store, scenario.metadata, source(scenario)) must beSome((datasets: Datasets) =>
-          findSnapshotDate(datasets).exists(date =>
-            factsetsAfter(date)(datasets))) })
+          findSnapshot(datasets).exists(snapshot =>
+            factsetsLike(factset => {
+              println("x: " + snapshot.store.unprioritizedIds.contains(factset.id))
+              println("factset.partitions.min: " + factset.partitions.map(_.date).minimum)
+              println("factset.partitions.max: " + factset.partitions.map(_.date).maximum)
+              println("snapshot: " + snapshot.date)
+              println("scenario: " + scenario.at)
+              if (snapshot.store.unprioritizedIds.contains(factset.id))
+                factset.partitions.forall(p => p.date > snapshot.date && p.date <= scenario.at)
+              else
+                factset.partitions.forall(p => p.date <= scenario.at)})(datasets))) })
 
     def latest =
       prop((scenario: RepositoryScenario) => validSnapshot(scenario) ==> {
@@ -202,9 +212,12 @@ Support 3 - Fallback behaviour when there is no incremental snapshot to load fro
     })
 
   def factsetsAfter(at: Date): Datasets => Boolean =
+    factsetsLike(_.partitions.forall(_.date > at))
+
+  def factsetsLike(pred: Factset => Boolean): Datasets => Boolean =
     datasets => datasets.sets.forall({
       case Prioritized(_, FactsetDataset(factset)) =>
-        factset.partitions.forall(_.date > at)
+        pred(factset)
       case Prioritized(_, SnapshotDataset(snapshot)) =>
         true
     })
@@ -218,9 +231,12 @@ Support 3 - Fallback behaviour when there is no incremental snapshot to load fro
     })
 
   def findSnapshotDate(datasets: Datasets): Option[Date] =
+    findSnapshot(datasets).map(_.date)
+
+  def findSnapshot(datasets: Datasets): Option[Snapshot] =
     datasets.sets.collect({
       case Prioritized(_, SnapshotDataset(snapshot)) =>
-        snapshot.date
+        snapshot
     }).headOption
 
   def countSnapshots(datasets: Datasets): Int =

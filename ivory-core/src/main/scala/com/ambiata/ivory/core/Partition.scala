@@ -27,6 +27,17 @@ object Partition {
   implicit def PartitionOrdering =
     PartitionOrder.toScalaOrdering
 
+  def intervals(ps: List[Partition]): List[(Partition, Partition)] =
+    ps.sorted.foldLeft[List[(Partition, Partition)]](Nil)({
+      case (Nil, el) =>
+        List(el -> el)
+      case ((min, max) :: t, el) =>
+        if (el.namespace == max.namespace && Date.fromLocalDate(max.date.localDate.plusDays(1)) == el.date)
+          (min, el) :: t
+        else
+          (el, el) :: (min, max) :: t
+    }).reverse
+
   def parseDir(dir: FilePath): Validation[String, Partition] =
     listParser.flatMap(p => ListParser.consumeRest.as(p)).run(dir.components.reverse)
 

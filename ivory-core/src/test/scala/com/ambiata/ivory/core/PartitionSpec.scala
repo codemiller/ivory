@@ -32,6 +32,10 @@ Can create a Partition path as a:
   FilePath                $filePath
   String                  $stringPath
 
+Compress a Partition as intervals:
+  All input partitions appear in the output intervals $intervals
+
+
 """
 
   case class MalformedDateString(date: String)
@@ -81,4 +85,15 @@ Can create a Partition path as a:
 
   def stringPath = prop((p: Partition) =>
     Partition.stringPath(p.namespace.name, p.date) ==== s"${p.namespace.name}/${p.date.slashed}")
+
+  def intervals = prop((ps: List[Partition]) => {
+    val result = Partition.intervals(ps)
+    ps.forall(p => result.exists({
+      case (min, max) =>
+        min.namespace == p.namespace &&
+          max.namespace == p.namespace &&
+          min.date >= p.date &&
+          max.date <= p.date
+    }))
+  })
 }
