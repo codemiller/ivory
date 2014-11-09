@@ -6,7 +6,7 @@ object depend {
                       "org.scalaz"           %% "scalaz-effect"   % "7.1.0",
                       "org.scalaz"           %% "scalaz-scalacheck-binding" % "7.1.0" % "test")
 
-  val scopt     = Seq("com.github.scopt"     %% "scopt"           % "3.2.0")
+  val pirate    = Seq("io.mth"               %% "pirate"          % "0.9")
   val joda      = Seq("joda-time"            %  "joda-time"       % "2.1")
   val spire     = Seq("org.spire-math"       %% "spire"           % "0.8.2")
   val argonaut  = Seq("io.argonaut"          %% "argonaut"        % "6.1-M4")
