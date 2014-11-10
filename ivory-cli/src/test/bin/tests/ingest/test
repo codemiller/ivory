@@ -39,4 +39,5 @@ fi
 
 
 ### Ingest with an invalid namespace - should fail
+
 $IVORY ingest -r "${REPOSITORY}" -i "${INPUT}/facts-2" -n invalid | grep "Unknown namespaces"

@@ -35,6 +35,9 @@ trait Arbitraries {
   implicit def DateTimeZoneArbitrary: Arbitrary[DateTimeZone] =
     Arbitrary(GenDate.zone)
 
+  implicit def DelimiterArbitrary: Arbitrary[Delimiter] =
+    Arbitrary(GenOutputFormat.delimiter)
+
   implicit def DictionaryArbitrary: Arbitrary[Dictionary] =
     Arbitrary(GenDictionary.dictionary)
 
@@ -44,11 +47,17 @@ trait Arbitraries {
   implicit def EncodingArbitrary: Arbitrary[Encoding] =
     Arbitrary(GenDictionary.encoding)
 
+  implicit def EncodedAsArbitrary: Arbitrary[EncodedAs] =
+    Arbitrary(GenOutputFormat.encoding)
+
   implicit def FactArbitrary: Arbitrary[Fact] =
     Arbitrary(GenFact.fact)
 
   implicit def FactsetArbitrary: Arbitrary[Factset] =
     Arbitrary(GenRepository.factset)
+
+  implicit def FactsetDataVersionArbitrary: Arbitrary[FactsetDataVersion] =
+    Arbitrary(GenVersion.factset)
 
   implicit def FactsetIdArbitrary: Arbitrary[FactsetId] =
     Arbitrary(GenIdentifier.factset)
@@ -62,6 +71,9 @@ trait Arbitraries {
   implicit def FeatureStoreIdArbitrary: Arbitrary[FeatureStoreId] =
     Arbitrary(GenIdentifier.store)
 
+  implicit def FormArbitrary: Arbitrary[Form] =
+    Arbitrary(GenOutputFormat.form)
+
   implicit def IdentifierArbitrary: Arbitrary[Identifier] =
     Arbitrary(GenIdentifier.identifier)
 
@@ -71,11 +83,17 @@ trait Arbitraries {
   implicit def ListEncodingArbitrary: Arbitrary[ListEncoding] =
     Arbitrary(GenDictionary.listEncoding)
 
+  implicit def MetadataVersionArbitrary: Arbitrary[MetadataVersion] =
+    Arbitrary(GenVersion.metadata)
+
   implicit def ModeArbitrary: Arbitrary[Mode] =
     Arbitrary(GenDictionary.mode)
 
   implicit def NameArbitrary: Arbitrary[Name] =
     Arbitrary(GenString.name)
+
+  implicit def OutputFormatArbitrary: Arbitrary[OutputFormat] =
+    Arbitrary(GenOutputFormat.format)
 
   implicit def PartitionArbitrary: Arbitrary[Partition] =
     Arbitrary(GenRepository.partition)
@@ -95,11 +113,14 @@ trait Arbitraries {
   implicit def RepositoryConfigArbitraryId: Arbitrary[RepositoryConfigId] =
     Arbitrary(GenIdentifier.repositoryConfigId)
 
-  implicit def SnapshotIdArbitrary: Arbitrary[SnapshotId] =
-    Arbitrary(GenIdentifier.snapshot)
-
   implicit def SnapshotArbitrary: Arbitrary[Snapshot] =
     Arbitrary(GenRepository.snapshot)
+
+  implicit def SnapshotDataVersionArbitrary: Arbitrary[SnapshotDataVersion] =
+    Arbitrary(GenVersion.snapshot)
+
+  implicit def SnapshotIdArbitrary: Arbitrary[SnapshotId] =
+    Arbitrary(GenIdentifier.snapshot)
 
   implicit def StructEncodingArbitrary: Arbitrary[StructEncoding] =
     Arbitrary(GenDictionary.structEncoding)

@@ -1,31 +1,26 @@
 package com.ambiata.ivory.operation.extraction
 
+//import argonaut._
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.storage.control._
 import com.ambiata.ivory.operation.extraction.output._
+import com.ambiata.mundane.control._
 
-import scalaz.Scalaz._
+import scalaz._, Scalaz._, effect.IO
 
 object Extraction {
 
   def extract(formats: OutputFormats, input: IvoryLocation, dictionary: Dictionary): RepositoryTIO[Unit] = RepositoryT.fromResultTIO(repository =>
-    formats.outputs.traverse {
-      case (DenseFormat(format), output) =>
-        println(s"Storing extracted data '$input' to '${output.show}'")
-        GroupByEntityOutput.createWithDictionary(repository, input, output, dictionary, format match {
-          case DelimitedFile(delim) => GroupByEntityFormat.DenseText(delim, formats.missingValue, false)
-          case EscapedFile(delim)   => GroupByEntityFormat.DenseText(delim, formats.missingValue, true)
-          case ThriftFile           => GroupByEntityFormat.DenseThrift
-        })
-      case (SparseFormat(ThriftFile), output) =>
-        println(s"Storing extracted data '$input' to '${output.show}'")
-        GroupByEntityOutput.createWithDictionary(repository, input, output, dictionary, GroupByEntityFormat.SparseThrift)
-      case (SparseFormat(DelimitedFile(delim)), output) =>
-        println(s"Storing extracted data '$input' to '${output.show}'")
-        SparseOutput.extractWithDictionary(repository, input, output, dictionary, delim, formats.missingValue, false)
-      case (SparseFormat(EscapedFile(delim)), output) =>
-        println(s"Storing extracted data '$input' to '${output.show}'")
-        SparseOutput.extractWithDictionary(repository, input, output, dictionary, delim, formats.missingValue, true)
-    }.void
+    formats.outputs.traverseU({ case (format, output) =>
+      ResultT.io(println(s"Storing extracted data '$input' to '${output.show}'")) >> (format match {
+        case OutputFormat.Thrift(Form.Sparse) =>
+          GroupByEntityOutput.createWithDictionary(repository, input, output, dictionary, GroupByEntityFormat.SparseThrift)
+        case OutputFormat.Thrift(Form.Dense) =>
+          GroupByEntityOutput.createWithDictionary(repository, input, output, dictionary, GroupByEntityFormat.DenseThrift)
+        case OutputFormat.Text(Form.Sparse, delimiter, encoding) =>
+          SparseOutput.extractWithDictionary(repository, input, output, dictionary, delimiter.character, formats.missingValue, encoding === EncodedAs.Escaped)
+        case OutputFormat.Text(Form.Dense, delimiter, encoding) =>
+          GroupByEntityOutput.createWithDictionary(repository, input, output, dictionary, GroupByEntityFormat.DenseText(delimiter.character, formats.missingValue, encoding === EncodedAs.Escaped))
+      }) }).void
   )
 }

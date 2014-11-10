@@ -4,8 +4,9 @@ import com.ambiata.ivory.core.IvorySyntax._
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.operation.extraction.squash.{SquashConfig, SquashJob}
 import com.ambiata.ivory.storage.fact._
+//import com.ambiata.ivory.storage.manifest._
 import com.ambiata.ivory.storage.legacy.FeatureStoreSnapshot
-import com.ambiata.ivory.storage.metadata._, Metadata._
+import com.ambiata.ivory.storage.metadata.{SnapshotManifest => SM, _}, Metadata._
 import com.ambiata.mundane.control._
 import com.ambiata.mundane.io.MemoryConversions._
 import com.ambiata.notion.core._
@@ -28,6 +29,7 @@ object Chord {
    */
   def createChordWithSquash[A](repository: Repository, entitiesLocation: IvoryLocation, takeSnapshot: Boolean,
                                config: SquashConfig, outs: List[IvoryLocation])(f: (Key, Dictionary) => ResultTIO[A]): ResultTIO[A] = for {
+    commit   <- Metadata.findOrCreateLatestCommitId(repository)
     entities <- Entities.readEntitiesFrom(entitiesLocation)
     out      <- createChordRaw(repository, entities, takeSnapshot)
     hr       <- repository.asHdfsRepository[IO]
@@ -46,7 +48,7 @@ object Chord {
     _                    = println(s"Latest store: ${store.id}")
     _                    = println(s"Are we taking a snapshot? ${takeSnapshot}")
     snapshot            <- if (takeSnapshot) Snapshots.takeSnapshot(repository, entities.earliestDate).map(_.meta.pure[Option])
-                           else              SnapshotManifest.latestSnapshot(repository, entities.earliestDate).run
+                           else              SM.latestSnapshot(repository, entities.earliestDate).run
     _                    = println(s"Using snapshot: ${snapshot.map(_.snapshotId)}.")
     out                 <- runChord(repository, store, entities, snapshot)
   } yield out
@@ -54,9 +56,9 @@ object Chord {
   /**
    * Run the chord extraction on Hdfs, returning the [[Key]] where the chord was written to.
    */
-  def runChord(repository: Repository, store: FeatureStore, entities: Entities, incremental: Option[SnapshotManifest]): ResultTIO[(Key, Dictionary)] = {
+  def runChord(repository: Repository, store: FeatureStore, entities: Entities, incremental: Option[SM]): ResultTIO[(Key, Dictionary)] = {
     for {
-      featureStoreSnapshot <- incremental.traverseU(SnapshotManifest.featureStoreSnapshot(repository, _))
+      featureStoreSnapshot <- incremental.traverseU(SM.featureStoreSnapshot(repository, _))
       dictionary           <- latestDictionaryFromIvory(repository)
       _                     = println(s"Calculating globs using, store = ${store.id}, latest date = ${entities.latestDate}, snapshot: ${featureStoreSnapshot.map(_.snapshotId)}.")
       factsetGlobs         <- calculateGlobs(repository, store, entities.latestDate, featureStoreSnapshot)
