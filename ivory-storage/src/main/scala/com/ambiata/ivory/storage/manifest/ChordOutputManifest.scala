@@ -1,3 +1,5 @@
 package com.ambiata.ivory.storage.manifest
 
-case class ChordOutputManifest()
+import com.ambiata.ivory.core._
+
+case class ChordOutputManifest(commit: CommitId, format: OutputFormat)

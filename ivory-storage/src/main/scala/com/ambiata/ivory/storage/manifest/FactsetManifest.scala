@@ -1,3 +1,5 @@
 package com.ambiata.ivory.storage.manifest
 
-case class FactsetManifest()
+import com.ambiata.ivory.core._
+
+case class FactsetManifest(id: FactsetId, data: FactsetDataVersion)

@@ -1,3 +1,5 @@
 package com.ambiata.ivory.storage.manifest
 
-case class SnapshotOutputManifest(data: String)
+import com.ambiata.ivory.core._
+
+case class SnapshotOutputManifest(commit: CommitId, format: OutputFormat)

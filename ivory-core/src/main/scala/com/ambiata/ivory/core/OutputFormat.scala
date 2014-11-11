@@ -1,6 +1,4 @@
-package com.ambiata.ivory.operation.extraction.output
-
-import com.ambiata.ivory.core._
+package com.ambiata.ivory.core
 
 sealed trait OutputFormat {
 
@@ -29,5 +27,3 @@ object OutputFormat {
     case "sparse:thrift"  => SparseFormat(ThriftFile)
   })
 }
-
-case class OutputFormats(outputs: List[(OutputFormat, IvoryLocation)], missingValue: String)
