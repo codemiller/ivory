@@ -34,6 +34,9 @@ object OutputFormat {
   implicit def OutputFormatDecodeJson: DecodeJson[OutputFormat] =
     DecodeJson.optionDecoder(_.string >>= fromString, "OutputFormat")
 
+  implicit def OutputFormatEqual: Equal[OutputFormat] =
+    Equal.equalA[OutputFormat]
+
   def fromString(s: String): Option[OutputFormat] = PartialFunction.condOpt(s)({
     case "dense:psv"      => DenseFormat(DelimitedFile('|'))
     case "dense:csv"      => DenseFormat(DelimitedFile(','))

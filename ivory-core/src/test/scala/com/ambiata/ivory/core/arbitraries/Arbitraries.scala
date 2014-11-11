@@ -35,6 +35,9 @@ trait Arbitraries {
   implicit def DateTimeZoneArbitrary: Arbitrary[DateTimeZone] =
     Arbitrary(GenDate.zone)
 
+  implicit def DelimiterArbitrary: Arbitrary[Delimiter] =
+    Arbitrary(GenOutputFormat.delimiter)
+
   implicit def DictionaryArbitrary: Arbitrary[Dictionary] =
     Arbitrary(GenDictionary.dictionary)
 
@@ -76,6 +79,9 @@ trait Arbitraries {
 
   implicit def NameArbitrary: Arbitrary[Name] =
     Arbitrary(GenString.name)
+
+  implicit def OutputFormatArbitrary: Arbitrary[OutputFormat] =
+    Arbitrary(GenOutputFormat.format)
 
   implicit def PartitionArbitrary: Arbitrary[Partition] =
     Arbitrary(GenRepository.partition)
