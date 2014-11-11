@@ -8,7 +8,7 @@ import com.ambiata.ivory.api.Ivory.{Date => _, _}
 import com.ambiata.ivory.operation.extraction.squash.SquashJob
 import com.ambiata.ivory.storage.control._
 import com.ambiata.ivory.storage.metadata.{SnapshotManifest => SM}
-import com.ambiata.ivory.storage.manifest._
+//import com.ambiata.ivory.storage.manifest._
 import org.joda.time.LocalDate
 import java.util.{Calendar, UUID}
 
@@ -54,7 +54,7 @@ object snapshot extends IvoryApp {
         meta = res.meta
         r    <- RepositoryRead.fromRepository(repo)
         _    <- SquashJob.squashFromSnapshotWith(repo, meta, c.squash, of.outputs.map(_._2)) {
-          (input, dictionary, manifest) => Extraction.extract(of, repo.toIvoryLocation(input), dictionary, ManifestFlavour.SnapshotOutput, manifest).run(r)
+          (input, dictionary) => Extraction.extract(of, repo.toIvoryLocation(input), dictionary).run(r)
         }
       } yield List(
         banner,

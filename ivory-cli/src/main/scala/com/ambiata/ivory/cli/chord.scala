@@ -6,7 +6,7 @@ import com.ambiata.ivory.core.IvoryLocation
 import com.ambiata.ivory.operation.extraction.Chord
 import com.ambiata.ivory.operation.extraction.output._
 import com.ambiata.ivory.storage.control._
-import com.ambiata.ivory.storage.manifest._
+//import com.ambiata.ivory.storage.manifest._
 import com.ambiata.mundane.control._
 import scalaz.effect.IO
 
@@ -42,7 +42,7 @@ object chord extends IvoryApp {
       r    <- RepositoryRead.fromRepository(repo)
       // TODO Should be using Ivory API here, but the generic return type is lost on the monomorphic function
       _    <- Chord.createChordWithSquash(repo, ent, c.takeSnapshot, c.squash, of.outputs.map(_._2))(
-        (out, dict, manifest) => Extraction.extract(of, repo.toIvoryLocation(out), dict, ManifestFlavour.ChordOutput, manifest).run(r)
+        (out, dict) => Extraction.extract(of, repo.toIvoryLocation(out), dict).run(r)
       )
     } yield List(s"Successfully extracted chord from '${repo.root.show}'") }
   })

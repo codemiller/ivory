@@ -5,7 +5,7 @@ import com.ambiata.ivory.operation.extraction.snapshot._
 import com.ambiata.ivory.storage.fact._
 import com.ambiata.ivory.storage.metadata.Metadata._
 import com.ambiata.ivory.storage.metadata.{SnapshotManifest => SM, _}
-import com.ambiata.ivory.storage.manifest._
+//import com.ambiata.ivory.storage.manifest._
 import com.ambiata.mundane.control._
 import com.ambiata.notion.core._
 import com.ambiata.mundane.io.MemoryConversions._
@@ -88,7 +88,8 @@ object Snapshots {
       output          =  hr.toIvoryLocation(Repository.snapshot(newSnapshot.snapshotId))
       stats           <- job(hr, dictionary, previousSnapshot, newFactsetGlobs, date, output.toHdfsPath, windows, hr.codec).run(hr.configuration)
       _               <- DictionaryTextStorageV2.toKeyStore(repository, Repository.snapshot(newSnapshot.snapshotId) / ".dictionary", dictionary)
-      _               <- Manifest.save(Manifest(ManifestVersion.V1, IvoryVersion.get, ManifestFlavour.Snapshot, SnapshotManifest(newSnapshot.commitId, newSnapshot.snapshotId, SnapshotDataVersion.V1, newSnapshot.date)), repository.toIvoryLocation(Repository.snapshot(newSnapshot.snapshotId) / KeyName.unsafe(".manifest.json")))
+      _               <- NewSnapshotManifest.save(repository, newSnapshot)
+      //_               <- Manifest.save(Manifest(ManifestVersion.V1, IvoryVersion.get, ManifestFlavour.Snapshot, SnapshotManifest(newSnapshot.commitId, newSnapshot.snapshotId, SnapshotDataVersion.V1, newSnapshot.date)), repository.toIvoryLocation(Repository.snapshot(newSnapshot.snapshotId) / KeyName.unsafe(".manifest.json")))
       _               <- SnapshotStats.save(repository, newSnapshotId, stats)
     } yield ()
 

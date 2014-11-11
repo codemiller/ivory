@@ -5,7 +5,7 @@ import com.ambiata.ivory.lookup.{FeatureIdLookup, FeatureReduction, FeatureReduc
 import com.ambiata.ivory.operation.extraction.{ChordJob, Entities, Snapshots, SnapshotJob}
 import com.ambiata.ivory.storage.lookup.{ReducerLookups, ReducerSize, WindowLookup}
 import com.ambiata.ivory.storage.metadata.{SnapshotManifest => SM, _}
-import com.ambiata.ivory.storage.manifest._
+//import com.ambiata.ivory.storage.manifest._
 import com.ambiata.mundane.control._
 import com.ambiata.mundane.io.FileName
 import com.ambiata.mundane.io.MemoryConversions._
@@ -24,7 +24,7 @@ import scalaz._, Scalaz._, effect.IO
 object SquashJob {
 
   def squashFromSnapshotWith[A](repository: Repository, snapmeta: SM, conf: SquashConfig, out: List[IvoryLocation])
-                               (f: (Key, Dictionary, OutputFormat => SnapshotOutputManifest) => ResultTIO[A]): ResultTIO[A] = for {
+                               (f: (Key, Dictionary) => ResultTIO[A]): ResultTIO[A] = for {
     // FIX this isn't ideal, but reflects the fact the snapshot doesn't really pass enough precise information
     //     to handle this (and is related to the fact that it is possible for this to be run at _not_ the
     //     latest commit incorrectly). Currently this is just taking the latest commit, which _should_ be correct
@@ -34,8 +34,8 @@ object SquashJob {
     in          = Repository.snapshot(snapmeta.snapshotId)
     hr         <- repository.asHdfsRepository[IO]
     job        <- SquashJob.initSnapshotJob(hr.configuration, snapmeta.date)
-    manifest   = (o: OutputFormat) => SnapshotOutputManifest(commit, snapmeta.snapshotId, o)
-    result     <- squashMeMaybe(dictionary, out)(f(in, dictionary, manifest), squash(repository, dictionary, in, conf, out, job)(f(_, dictionary, manifest)))
+//    manifest   = (o: OutputFormat) => SnapshotOutputManifest(commit, snapmeta.snapshotId, o)
+    result     <- squashMeMaybe(dictionary, out)(f(in, dictionary), squash(repository, dictionary, in, conf, out, job)(f(_, dictionary)))
   } yield result
 
   /**
