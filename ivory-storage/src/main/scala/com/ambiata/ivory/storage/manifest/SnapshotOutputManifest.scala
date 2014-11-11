@@ -1,18 +1,15 @@
 package com.ambiata.ivory.storage.manifest
 
-import argonaut._
+import argonaut._, Argonaut._
 import com.ambiata.ivory.core._
 import scalaz._
 
 case class SnapshotOutputManifest(commit: CommitId, snapshot: SnapshotId, format: OutputFormat)
 
 object SnapshotOutputManifest {
-  implicit def SnapshotOutputManifestEncodeJson: EncodeJson[SnapshotOutputManifest] =
-    ???
-
-  implicit def SnapshotOutputManifestDecodeJson: DecodeJson[SnapshotOutputManifest] =
-    ???
-
   implicit def SnapshotOutputManifestEqual: Equal[SnapshotOutputManifest] =
     Equal.equalA[SnapshotOutputManifest]
+
+  implicit def SnapshotOutputManifestCodecJson: CodecJson[SnapshotOutputManifest] =
+    casecodec3(SnapshotOutputManifest.apply, SnapshotOutputManifest.unapply)("commit_id", "snapshot_id", "format")
 }
