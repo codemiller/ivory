@@ -1,7 +1,8 @@
 package com.ambiata.ivory.core
 
-import argonaut._, Argonaut._
-import scalaz._, Scalaz._
+import argonaut._
+import scalaz._
+
 
 /** This represents the version of the on-disk data that makes up an internal snapshot. */
 sealed trait SnapshotDataVersion
@@ -14,14 +15,10 @@ object SnapshotDataVersion {
   implicit def SnapshotDataVersionEqual: Equal[SnapshotDataVersion] =
     Equal.equalA[SnapshotDataVersion]
 
-  implicit def SnapshotDataVersionEncodeJson: EncodeJson[SnapshotDataVersion] =
-    EncodeJson({ case V1 => "v1".asJson })
-
-  implicit def SnapshotDataVersionDecodeJson: DecodeJson[SnapshotDataVersion] =
-    DecodeJson.optionDecoder(_.string.flatMap({
-      case "v1" =>
-        V1.some
-      case _ =>
-        none
-    }), "SnapshotDataVersion")
+  implicit def SnapshotDataVersionCodecJson: CodecJson[SnapshotDataVersion] =
+    ArgonautPlus.codecEnum("SnapshotDataVersion", {
+      case V1 => "v1"
+    }, {
+      case "v1" => V1
+    })
 }

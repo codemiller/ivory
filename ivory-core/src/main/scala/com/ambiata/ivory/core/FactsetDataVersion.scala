@@ -1,7 +1,8 @@
 package com.ambiata.ivory.core
 
-import argonaut._, Argonaut._
-import scalaz._, Scalaz._
+import argonaut._
+import scalaz._
+
 
 /** This represents the version of the on-disk data that makes up a factset. */
 sealed trait FactsetDataVersion
@@ -20,19 +21,12 @@ object FactsetDataVersion {
   implicit def FactsetDataVersionEqual: Equal[FactsetDataVersion] =
     Equal.equalA[FactsetDataVersion]
 
-  implicit def FactsetDataVersionEncodeJson: EncodeJson[FactsetDataVersion] =
-    EncodeJson({
-      case V1 => "v1".asJson
-      case V2 => "v2".asJson
+  implicit def FactsetDataVersionCodecJson: CodecJson[FactsetDataVersion] =
+    ArgonautPlus.codecEnum("FactsetDataVersion", {
+      case V1 => "v1"
+      case V2 => "v2"
+    }, {
+      case "v1" => V1
+      case "v2" => V2
     })
-
-  implicit def FactsetDataVersionDecodeJson: DecodeJson[FactsetDataVersion] =
-    DecodeJson.optionDecoder(_.string.flatMap({
-      case "v1" =>
-        V1.some
-      case "v2" =>
-        V2.some
-      case _ =>
-        none
-    }), "FactsetDataVersion")
 }
