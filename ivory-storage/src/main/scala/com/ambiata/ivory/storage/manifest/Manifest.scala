@@ -2,15 +2,14 @@ package com.ambiata.ivory.storage.manifest
 
 import argonaut._, Argonaut._
 import com.ambiata.ivory.core._
-import com.ambiata.mundane.control._
-import scalaz.effect.IO
 
-case class Manifest[A](format: ManifestVersion, ivory: IvoryVersion, flavour: ManifestFlavour[A], detail: A)
+case class Manifest(format: ManifestVersion, ivory: IvoryVersion)
 
 object Manifest {
-  implicit def ManifestEncodeJson[A: EncodeJson]: EncodeJson[Manifest[A]] =
-    ???
+  implicit def ManifestCodecJson: CodecJson[Manifest] =
+    casecodec2(Manifest.apply, Manifest.unapply)("manifest_version", "ivory_version")
 
-  def save[A: EncodeJson](manifest: Manifest[A], location: IvoryLocation): ResultT[IO, Unit] =
-    IvoryLocation.writeUtf8(location, manifest.asJson.spaces2)
+
+//  def save[A: EncodeJson](manifest: Manifest[A], location: IvoryLocation): ResultT[IO, Unit] =
+//    IvoryLocation.writeUtf8(location, manifest.asJson.spaces2)
 }

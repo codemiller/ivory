@@ -5,12 +5,12 @@ import com.ambiata.ivory.core._
 import scalaz._
 
 
-case class ChordOutputManifest(commit: CommitId, format: OutputFormat)
+case class ChordOutputManifest(core: Manifest, commit: CommitId, format: OutputFormat)
 
 object ChordOutputManifest {
   implicit def ChordOutputManifestEqual: Equal[ChordOutputManifest] =
     Equal.equalA[ChordOutputManifest]
 
   implicit def ChordOutputManifestCodecJson: CodecJson[ChordOutputManifest] =
-    casecodec2(ChordOutputManifest.apply, ChordOutputManifest.unapply)("commit_id", "format")
+    casecodec3(ChordOutputManifest.apply, ChordOutputManifest.unapply)("metadata", "commit_id", "output_format")
 }
