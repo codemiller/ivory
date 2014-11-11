@@ -3,7 +3,7 @@ package com.ambiata.ivory.storage.metadata
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.core.thrift.DictionaryThriftConversion._
 import com.ambiata.ivory.core.thrift._
-import com.ambiata.ivory.storage.version._
+import com.ambiata.ivory.storage.version.{Version => StringVersion}
 import com.ambiata.mundane.control._
 import com.ambiata.notion.core._
 import com.ambiata.poacher.mr.ThriftSerialiser
@@ -59,6 +59,6 @@ case class DictionaryThriftStorage(repository: Repository) {
   def store(dictionary: Dictionary): ResultTIO[DictionaryId] = for {
     bytes <- ResultT.safe[IO, Array[Byte]](ThriftSerialiser().toBytes(dictionaryToThrift(dictionary)))
     id    <- IdentifierStorage.write(repository, dictionaries, DATA, ByteVector(bytes))
-    _     <- Version.write(repository, dictionaries / id.asKeyName, Version(DictionaryVersionOne.toString))
+    _     <- StringVersion.write(repository, dictionaries / id.asKeyName, StringVersion(DictionaryVersionOne.toString))
   } yield DictionaryId(id)
 }
