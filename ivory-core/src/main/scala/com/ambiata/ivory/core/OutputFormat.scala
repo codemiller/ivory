@@ -28,15 +28,6 @@ case class DelimitedFile(delim: Delimiter) extends OutputFileFormat
 case object ThriftFile extends OutputFileFormat
 
 object OutputFormat {
-  implicit def OutputFormatEncodeJson: EncodeJson[OutputFormat] =
-    EncodeJson(_.render.asJson)
-
-  implicit def OutputFormatDecodeJson: DecodeJson[OutputFormat] =
-    DecodeJson.optionDecoder(_.string >>= fromString, "OutputFormat")
-
-  implicit def OutputFormatEqual: Equal[OutputFormat] =
-    Equal.equalA[OutputFormat]
-
   def fromString(s: String): Option[OutputFormat] = PartialFunction.condOpt(s)({
     case "dense:psv"      => DenseFormat(DelimitedFile('|'))
     case "dense:csv"      => DenseFormat(DelimitedFile(','))
@@ -47,4 +38,13 @@ object OutputFormat {
     case "sparse:tsv"     => SparseFormat(DelimitedFile('\t'))
     case "sparse:thrift"  => SparseFormat(ThriftFile)
   })
+
+  implicit def OutputFormatEqual: Equal[OutputFormat] =
+    Equal.equalA[OutputFormat]
+
+  implicit def OutputFormatEncodeJson: EncodeJson[OutputFormat] =
+    EncodeJson(_.render.asJson)
+
+  implicit def OutputFormatDecodeJson: DecodeJson[OutputFormat] =
+    DecodeJson.optionDecoder(_.string >>= fromString, "OutputFormat")
 }
