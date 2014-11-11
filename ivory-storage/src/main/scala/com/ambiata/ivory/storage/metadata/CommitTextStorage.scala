@@ -17,6 +17,7 @@ object CommitTextStorage {
 
   def increment(repository: Repository, c: Commit): ResultTIO[CommitId] = for {
     latest      <- latestId(repository)
+    // FIX this is a silly error message, need some sympathy for users.
     nextId      <- ResultT.fromOption[IO, CommitId](latest.map(_.next).getOrElse(Some(CommitId.initial)), "Ran out of Commit ids!")
     _           <- storeCommitToId(repository, nextId, c)
   } yield nextId
@@ -45,7 +46,7 @@ object CommitTextStorage {
   /**
    * looks for the latest commit id, if there are no commits, it pushes one and returns
    * the id for it.  Be aware that its a potential write operation.
-   **/
+   */
   def findOrCreateLatestId(repo: Repository, dictionaryId: DictionaryId, featureStoreId: FeatureStoreId): ResultTIO[CommitId] = for {
     oCommitId <- latestId(repo)
     commitId <- oCommitId match {

@@ -1,10 +1,12 @@
 package com.ambiata.ivory.operation.ingestion
 
 import com.ambiata.ivory.core._
-import com.ambiata.ivory.storage.control.IvoryTIO
+import com.ambiata.ivory.storage.control._
 import com.ambiata.ivory.storage.fact._
 import com.ambiata.ivory.storage.legacy._
 import com.ambiata.ivory.storage.metadata._
+import com.ambiata.ivory.storage.manifest._
+import com.ambiata.notion.core._
 import IvoryStorage._
 import com.ambiata.mundane.io.BytesQuantity
 import org.joda.time.DateTimeZone
@@ -68,8 +70,8 @@ object Ingest {
    */
   def updateFeatureStore(repository: Repository, factsetId: FactsetId): IvoryTIO[FeatureStoreId] = (for {
     fs <- Metadata.incrementFeatureStore(List(factsetId))
+    _  <- RepositoryT.fromResultTIO { _ => Manifest.save(Manifest(ManifestVersion.V1, IvoryVersion.get, ManifestFlavour.Factset, FactsetManifest(factsetId, FactsetDataVersion.V1)), repository.toIvoryLocation(Repository.factset(factsetId) / KeyName.unsafe(".manifest.json"))) }
     _  <- writeFactsetVersionI(List(factsetId))
     _  <- Metadata.incrementCommitFeatureStoreT(fs)
   } yield fs).toIvoryT(repository)
-
 }

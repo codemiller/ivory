@@ -1,10 +1,14 @@
 package com.ambiata.ivory.operation.extraction
 
+import argonaut._
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.storage.control._
+import com.ambiata.ivory.storage.manifest._
 import com.ambiata.ivory.operation.extraction.output._
+import com.ambiata.mundane.control._
+import com.ambiata.mundane.io._
 
-import scalaz.Scalaz._
+import scalaz._, Scalaz._, effect.IO
 
 object Extraction {
 
