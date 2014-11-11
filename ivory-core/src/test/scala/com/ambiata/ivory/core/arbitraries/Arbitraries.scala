@@ -53,6 +53,9 @@ trait Arbitraries {
   implicit def FactsetArbitrary: Arbitrary[Factset] =
     Arbitrary(GenRepository.factset)
 
+  implicit def FactsetDataVersionArbitrary: Arbitrary[FactsetDataVersion] =
+    Arbitrary(GenVersion.factset)
+
   implicit def FactsetIdArbitrary: Arbitrary[FactsetId] =
     Arbitrary(GenIdentifier.factset)
 
@@ -73,6 +76,9 @@ trait Arbitraries {
 
   implicit def ListEncodingArbitrary: Arbitrary[ListEncoding] =
     Arbitrary(GenDictionary.listEncoding)
+
+  implicit def ManifestVersionArbitrary: Arbitrary[ManifestVersion] =
+    Arbitrary(GenVersion.manifest)
 
   implicit def ModeArbitrary: Arbitrary[Mode] =
     Arbitrary(GenDictionary.mode)
@@ -101,11 +107,14 @@ trait Arbitraries {
   implicit def RepositoryConfigArbitraryId: Arbitrary[RepositoryConfigId] =
     Arbitrary(GenIdentifier.repositoryConfigId)
 
-  implicit def SnapshotIdArbitrary: Arbitrary[SnapshotId] =
-    Arbitrary(GenIdentifier.snapshot)
-
   implicit def SnapshotArbitrary: Arbitrary[Snapshot] =
     Arbitrary(GenRepository.snapshot)
+
+  implicit def SnapshotDataVersionArbitrary: Arbitrary[SnapshotDataVersion] =
+    Arbitrary(GenVersion.snapshot)
+
+  implicit def SnapshotIdArbitrary: Arbitrary[SnapshotId] =
+    Arbitrary(GenIdentifier.snapshot)
 
   implicit def StructEncodingArbitrary: Arbitrary[StructEncoding] =
     Arbitrary(GenDictionary.structEncoding)
