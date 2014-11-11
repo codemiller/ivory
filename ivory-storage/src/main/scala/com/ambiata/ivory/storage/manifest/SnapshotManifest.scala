@@ -2,7 +2,8 @@ package com.ambiata.ivory.storage.manifest
 
 import argonaut._, Argonaut._
 import com.ambiata.ivory.core._
-import scalaz._
+import com.ambiata.ivory.storage.control._
+import scalaz._, effect.IO
 
 case class SnapshotManifest(core: Manifest, commit: CommitId, id: SnapshotId, data: SnapshotDataVersion, date: Date)
 
