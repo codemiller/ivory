@@ -1,4 +1,4 @@
-package com.ambiata.ivory.storage.version
+package com.ambiata.ivory.core
 
 
 /** This represents the version of the on-disk data that makes up a factset. */

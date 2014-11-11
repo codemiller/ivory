@@ -1,0 +1,8 @@
+package com.ambiata.ivory.storage.manifest
+
+sealed trait ManifestFlavour[A]
+case object SnapshotManifestFlavour extends ManifestFlavour[SnapshotManifest]
+case object SnapshotOutputManifestFlavour extends ManifestFlavour[SnapshotOutputManifest]
+case object ChordOutputManifestFlavour extends ManifestFlavour[ChordOutputManifest]
+case object SquashManifestFlavour extends ManifestFlavour[SquashManifest]
+case object FactsetManifestFlavour extends ManifestFlavour[FactsetManifest]
