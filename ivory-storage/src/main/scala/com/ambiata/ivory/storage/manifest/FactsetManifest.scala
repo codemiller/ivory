@@ -11,7 +11,7 @@ case class FactsetManifest(core: Manifest, id: FactsetId, data: FactsetDataVersi
 
 object FactsetManifest {
   def writeWith(repository: Repository, id: FactsetId, data: FactsetDataVersion, partitions: List[Partition]): ResultTIO[Unit] =
-    IvoryLocation.writeUtf8(repository.toIvoryLocation(Repository.factset(id)) </> FileName.unsafe("manifest.json"),
+    IvoryLocation.writeUtf8(repository.toIvoryLocation(Repository.factset(id)) </> FileName.unsafe(".manifest.json"),
       FactsetManifest(Manifest(ManifestVersion.V1, IvoryVersion.get), id, data, partitions).asJson.spaces2)
 
   implicit def FactsetManifestEqual: Equal[FactsetManifest] =

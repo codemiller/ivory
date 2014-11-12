@@ -6,48 +6,48 @@ import com.ambiata.mundane.parse.ListParser
 import scalaz._, Scalaz._
 import argonaut._, Argonaut._
 
-case class Version private (toInt: Int) {
+case class VersionX private (toInt: Int) {
   def render: String =
     s"v${toInt}"
 
-  def next: Option[Version] =
-    (toInt != Int.MaxValue).option(Version(toInt + 1))
+  def next: Option[VersionX] =
+    (toInt != Int.MaxValue).option(VersionX(toInt + 1))
 
-  def order(i: Version): Ordering =
+  def order(i: VersionX): Ordering =
     (toInt ?|? i.toInt)
 }
 
-object Version extends MacrosCompat {
-  def initial: Version =
-    Version(1)
+object VersionX extends MacrosCompat {
+  def initial: VersionX =
+    VersionX(1)
 
-  def parse(s: String): Option[Version] =
-    s.startsWith("v").option(s).flatMap(_.tail.parseInt.toOption).filter(_ > 0).map(new Version(_))
+  def parse(s: String): Option[VersionX] =
+    s.startsWith("v").option(s).flatMap(_.tail.parseInt.toOption).filter(_ > 0).map(new VersionX(_))
 
-  implicit def VersionOrder: Order[Version] =
+  implicit def VersionXOrder: Order[VersionX] =
     Order.order(_ order _)
 
-  implicit def VersionOrdering: scala.Ordering[Version] =
-    VersionOrder.toScalaOrdering
+  implicit def VersionXOrdering: scala.Ordering[VersionX] =
+    VersionXOrder.toScalaOrdering
 
-  implicit def VersionEncodeJson: EncodeJson[Version] =
+  implicit def VersionXEncodeJson: EncodeJson[VersionX] =
     EncodeJson(_.render.asJson)
 
-  implicit def VersionDecodeJson: DecodeJson[Version] =
-    DecodeJson.optionDecoder(_.string.flatMap(parse), "Version")
+  implicit def VersionXDecodeJson: DecodeJson[VersionX] =
+    DecodeJson.optionDecoder(_.string.flatMap(parse), "VersionX")
 
-  def apply(string: String): Version =
+  def apply(string: String): VersionX =
     macro versionMacro
 
-  def versionMacro(c: Context)(string: c.Expr[String]): c.Expr[Version] = {
+  def versionMacro(c: Context)(string: c.Expr[String]): c.Expr[VersionX] = {
     import c.universe._
     string match {
       case Expr(Literal(Constant(str: String))) =>
-        Version.parse(str).getOrElse(c.abort(c.enclosingPosition, s"Invalid Version: $str"))
-        c.Expr[Version](q"Version.parse($str).get")
+        VersionX.parse(str).getOrElse(c.abort(c.enclosingPosition, s"Invalid VersionX: $str"))
+        c.Expr[VersionX](q"VersionX.parse($str).get")
 
       case other =>
-        c.abort(c.enclosingPosition, s"This is not a valid Version string: ${showRaw(string)}")
+        c.abort(c.enclosingPosition, s"This is not a valid VersionX string: ${showRaw(string)}")
     }
   }
 }

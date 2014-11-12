@@ -62,8 +62,8 @@ trait ArbitraryRepositories {
   }
 
   def importFacts(repository: Repository, facts: List[Fact]): IvoryTIO[Unit] = for {
-    factsetId <- Factsets.allocateFactsetIdI(repository)
-    _         <- updateFeatureStore(repository, factsetId)
+    factsetId  <- Factsets.allocateFactsetIdI(repository)
+    _          <- updateFeatureStore(repository, factsetId, facts.map(_.partition).distinct.sorted)
   } yield ()
 
 }

@@ -39,4 +39,14 @@ fi
 
 
 ### Ingest with an invalid namespace - should fail
+
 $IVORY ingest -r "${REPOSITORY}" -i "${INPUT}/facts-2" -n invalid | grep "Unknown namespaces"
+
+$IVORY ingest -r "${REPOSITORY}" -z "Australia/Sydney" -i "${INPUT}/facts-2" -n invalid | grep "Unknown namespaces"
+
+echo $REPOSITORY
+
+$IVORY update
+
+cat ${REPOSITORY}/factsets/00000000/manifest.json
+cat ${REPOSITORY}/factsets/00000001/manifest.json

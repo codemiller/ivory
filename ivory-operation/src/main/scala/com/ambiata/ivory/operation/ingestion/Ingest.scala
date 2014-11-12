@@ -5,11 +5,12 @@ import com.ambiata.ivory.storage.control._
 import com.ambiata.ivory.storage.fact._
 import com.ambiata.ivory.storage.legacy._
 import com.ambiata.ivory.storage.metadata._
-//import com.ambiata.ivory.storage.manifest._
-//import com.ambiata.notion.core._
+import com.ambiata.ivory.storage.manifest._
 import IvoryStorage._
 import com.ambiata.mundane.io.BytesQuantity
 import org.joda.time.DateTimeZone
+
+import scalaz.{Name => _, _}, Scalaz._
 
 /**
  * Import facts in an Ivory repository from an input path.
@@ -60,7 +61,8 @@ object Ingest {
     for {
       factsetId <- Factsets.allocateFactsetIdI(repository)
       _         <- FactImporter.importFacts(repository, cluster, namespace, optimal, format, factsetId, input, timezone)
-      _         <- updateFeatureStore(repository, factsetId)
+      glob      <- IvoryT.fromResultTIO { FactsetGlob.select(repository, factsetId) }
+      _         <- glob.traverseU(g => updateFeatureStore(repository, factsetId, g.partitions))
     } yield factsetId
 
   /**
@@ -68,9 +70,9 @@ object Ingest {
    *  - increment the feature store
    *  - write the factset version
    */
-  def updateFeatureStore(repository: Repository, factsetId: FactsetId): IvoryTIO[FeatureStoreId] = (for {
+  def updateFeatureStore(repository: Repository, factsetId: FactsetId, partitions: List[Partition]): IvoryTIO[FeatureStoreId] = (for {
     fs <- Metadata.incrementFeatureStore(List(factsetId))
-//    _  <- RepositoryT.fromResultTIO { _ => Manifest.save(Manifest(ManifestVersion.V1, IvoryVersion.get, ManifestFlavour.Factset, FactsetManifest(factsetId, FactsetDataVersion.V1)), repository.toIvoryLocation(Repository.factset(factsetId) / KeyName.unsafe(".manifest.json"))) }
+    _  <- RepositoryT.fromResultTIO { _ => FactsetManifest.writeWith(repository, factsetId, FactsetDataVersion.V1, partitions) }
     _  <- writeFactsetVersionI(List(factsetId))
     _  <- Metadata.incrementCommitFeatureStoreT(fs)
   } yield fs).toIvoryT(repository)
