@@ -29,13 +29,13 @@ case object ThriftFile extends OutputFileFormat
 
 object OutputFormat {
   def fromString(s: String): Option[OutputFormat] = PartialFunction.condOpt(s)({
-    case "dense:psv"      => DenseFormat(DelimitedFile('|'))
-    case "dense:csv"      => DenseFormat(DelimitedFile(','))
-    case "dense:tsv"      => DenseFormat(DelimitedFile('\t'))
+    case "dense:psv"      => DenseFormat(DelimitedFile(Delimiter.Psv))
+    case "dense:csv"      => DenseFormat(DelimitedFile(Delimiter.Csv))
+    case "dense:tsv"      => DenseFormat(DelimitedFile(Delimiter.Tsv))
     case "dense:thrift"   => DenseFormat(ThriftFile)
-    case "sparse:psv"     => SparseFormat(DelimitedFile('|'))
-    case "sparse:csv"     => SparseFormat(DelimitedFile(','))
-    case "sparse:tsv"     => SparseFormat(DelimitedFile('\t'))
+    case "sparse:psv"     => SparseFormat(DelimitedFile(Delimiter.Psv))
+    case "sparse:csv"     => SparseFormat(DelimitedFile(Delimiter.Csv))
+    case "sparse:tsv"     => SparseFormat(DelimitedFile(Delimiter.Tsv))
     case "sparse:thrift"  => SparseFormat(ThriftFile)
   })
 

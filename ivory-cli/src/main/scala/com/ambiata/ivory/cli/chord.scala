@@ -2,9 +2,8 @@ package com.ambiata.ivory.cli
 
 import com.ambiata.ivory.api.Ivory._
 import com.ambiata.ivory.cli.extract._
-import com.ambiata.ivory.core.IvoryLocation
+import com.ambiata.ivory.core._
 import com.ambiata.ivory.operation.extraction.Chord
-import com.ambiata.ivory.operation.extraction.output._
 import com.ambiata.ivory.storage.control._
 //import com.ambiata.ivory.storage.manifest._
 import com.ambiata.mundane.control._

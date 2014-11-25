@@ -8,6 +8,6 @@ object GenOutputFormat {
 
   def format: Gen[OutputFormat] = for {
     d <- delimiter
-    f <- Gen.oneOf(DenseFormat(d), SparseFormat(d))
+    f <- Gen.oneOf(DenseFormat(DelimitedFile(d)), SparseFormat(DelimitedFile(d)))
   } yield f
 }
