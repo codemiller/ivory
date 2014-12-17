@@ -17,6 +17,7 @@ halibut:std_dev|source=halibut:swiss_cheese|window=2 months|expression=std_dev
 halibut:mean|source=halibut:swiss_cheese|window=2 months|expression=mean
 expression:string|encoding=string|tombstone=T|mode=set
 expression:num_flips|source=expression:string|window=2 months|expression=num_flips
+expression:inverse_num_flips|source=expression:string|window=2 months|expression=inverse,num_flips
 expression:count_by|source=expression:string|window=2 months|expression=count_by
 expression:days_since_earliest_by|source=expression:string|window=2 months|expression=days_since_earliest_by
 expression:days_since_latest_by|source=expression:string|window=2 months|expression=days_since_latest_by
