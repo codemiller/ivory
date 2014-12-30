@@ -13,8 +13,8 @@ object TemporaryIvoryConfiguration {
 
   def runWithConf[A](dir: DirPath, f: IvoryConfiguration => RIO[A]): RIO[A] = {
     val sc = ScoobiConfiguration()
-    sc.set("hadoop.tmp.dir", dir.path)
-    sc.set("scoobi.dir", dir.path + "/")
+    sc.set("hadoop.tmp.dir", (dir </> "hadoop").path)
+    sc.set("scoobi.dir", (dir </> "scoobi").path + "/")
     val conf = IvoryConfiguration.fromScoobiConfiguration(sc)
     f(conf)
   }

@@ -21,7 +21,7 @@ object RepositoryBuilder {
 
   def using[A](f: HdfsRepository => RIO[A]): RIO[A] = TemporaryDirPath.withDirPath { dir =>
     runWithConf(dir, conf => {
-      val repo = HdfsRepository(HdfsLocation(dir.path), conf)
+      val repo = HdfsRepository(HdfsLocation((dir </> "repository").path), conf)
       f(repo)
     })
   }
@@ -39,15 +39,27 @@ object RepositoryBuilder {
 
   def createFacts(repo: HdfsRepository, facts: List[List[Fact]]): RIO[(FeatureStoreId, List[FactsetId])] = {
     val serialiser = ThriftSerialiser()
+    println("YYYY: " + (facts.map(_.size)))
+    println("ZZZZ: " + (facts.size))
     val factsets = facts.foldLeft(NonEmptyList(FactsetId.initial)) { case (factsetIds, facts) =>
       // This hack is because we can't pass a non-lazy Fact directly to fromLazySeq, but we want/need them to be props
       val bytes = facts.map(f => serialiser.toBytes(f.toNamespacedThrift))
       PartitionFactThriftStorageV2.PartitionedFactThriftStorer(repo, Repository.factset(factsetIds.head), None).storeScoobi(fromLazySeq(bytes).map {
         bytes => serialiser.fromBytesUnsafe(new NamespacedThriftFact with NamespacedThriftFactDerived, bytes)
       })(repo.scoobiConfiguration).persist(repo.scoobiConfiguration)
+      println("got stuff at: " + factsetIds)
       factsetIds.head.next.get <:: factsetIds
     }.tail.reverse
-    RepositoryT.runWithRepo(repo, writeFactsetVersion(factsets)).map(_.last -> factsets)
+    RepositoryT.runWithRepo(repo, writeFactsetVersion(factsets)).map(x => {
+      println("XXXXXXXXXXXXXXXXXXXX")
+      println("XXXXXXXXXXXXXXXXXXXX")
+      println("XXXXXXXXXXXXXXXXXXXX")
+      println("XXXXXXXXXXXXXXXXXXXX")
+      println(s"Size ${x.size}")
+      x.last -> factsets
+})
+
+//    RepositoryT.runWithRepo(repo, writeFactsetVersion(factsets)).map(_.last -> factsets)
   }
   def factsFromIvoryFactset(repo: HdfsRepository, factset: FactsetId): ScoobiAction[DList[ParseError \/ Fact]] =
     PartitionFactThriftStorageV2.PartitionedFactThriftLoader(repo, factset).loadScoobi
