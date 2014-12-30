@@ -87,7 +87,9 @@ class GroupByEntityOutputSpec extends Specification with SampleFacts with Thrown
       denseFacts =>
         // We're not actually checking the contexts of 'value' here
         denseFacts.map(f => f.getEntity -> f.getValue.keySet.asScala.toSet).toMap ====
-          facts.facts.groupBy(_.entity).mapValues(_.filter(!_.isTombstone).map(_.featureId.toString).toSet)
+          facts.facts.groupBy(_.entity).mapValues(_.filter(!_.isTombstone).map(_.featureId.toString).toSet).filter({
+            case (k, v) => !v.isEmpty
+          })
     }
   }.set(minTestsOk = 5, maxDiscardRatio = 10)
 
