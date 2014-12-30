@@ -39,23 +39,26 @@ object RepositoryBuilder {
 
   def createFacts(repo: HdfsRepository, facts: List[List[Fact]]): RIO[(FeatureStoreId, List[FactsetId])] = {
     val serialiser = ThriftSerialiser()
-    println("YYYY: " + (facts.map(_.size)))
-    println("ZZZZ: " + (facts.size))
+    val xx = scala.util.Random.nextInt
+    println(s"YYYY$xx: " + (facts.map(_.size)))
+    println(s"ZZZZ$xx: " + (facts.size))
     val factsets = facts.foldLeft(NonEmptyList(FactsetId.initial)) { case (factsetIds, facts) =>
       // This hack is because we can't pass a non-lazy Fact directly to fromLazySeq, but we want/need them to be props
       val bytes = facts.map(f => serialiser.toBytes(f.toNamespacedThrift))
       PartitionFactThriftStorageV2.PartitionedFactThriftStorer(repo, Repository.factset(factsetIds.head), None).storeScoobi(fromLazySeq(bytes).map {
         bytes => serialiser.fromBytesUnsafe(new NamespacedThriftFact with NamespacedThriftFactDerived, bytes)
       })(repo.scoobiConfiguration).persist(repo.scoobiConfiguration)
-      println("got stuff at: " + factsetIds)
+      println(s"[$xx]got stuff at: " + factsetIds)
+      println(s"[$xx] adding: " + factsetIds.head.next.get)
       factsetIds.head.next.get <:: factsetIds
     }.tail.reverse
+    println(s"factsets[$xx] of ${factsets.size}: " + factsets)
     RepositoryT.runWithRepo(repo, writeFactsetVersion(factsets)).map(x => {
       println("XXXXXXXXXXXXXXXXXXXX")
       println("XXXXXXXXXXXXXXXXXXXX")
       println("XXXXXXXXXXXXXXXXXXXX")
-      println("XXXXXXXXXXXXXXXXXXXX")
-      println(s"Size ${x.size}")
+      println(s"XXXXXXXXXXXXXXXXXXXX$xx")
+      println(s"Size[$xx] ${x.size}")
       x.last -> factsets
 })
 
