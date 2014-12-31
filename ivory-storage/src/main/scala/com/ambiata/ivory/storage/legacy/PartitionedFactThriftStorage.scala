@@ -49,7 +49,7 @@ trait PartitionFactThriftStorage {
       loadScoobiWith(repo, factset, from, to)
   }
 
-  val partitionPath: ((String, Date)) => String = scalaz.Memo.mutableHashMapMemo { nsd =>
+  val partitionPath: ((String, Date)) => String = nsd =>
     Partition.stringPath(nsd._1, nsd._2)
   }
 
