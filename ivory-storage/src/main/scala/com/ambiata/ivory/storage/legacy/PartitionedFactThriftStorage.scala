@@ -51,7 +51,6 @@ trait PartitionFactThriftStorage {
 
   val partitionPath: ((String, Date)) => String = nsd =>
     Partition.stringPath(nsd._1, nsd._2)
-  }
 
   case class PartitionedFactThriftStorer(repository: HdfsRepository, key: Key, codec: Option[CompressionCodec]) {
     def storeScoobi(dlist: DList[Fact])(implicit sc: ScoobiConfiguration): DList[(PartitionKey, ThriftFact)] = {
