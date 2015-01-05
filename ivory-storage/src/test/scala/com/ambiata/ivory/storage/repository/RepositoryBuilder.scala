@@ -5,7 +5,7 @@ import com.ambiata.ivory.core.TemporaryIvoryConfiguration._
 import com.ambiata.ivory.core.thrift.NamespacedThriftFact
 import com.ambiata.ivory.mr.FactFormats._
 import com.ambiata.ivory.storage.control._
-import com.ambiata.ivory.storage.fact.Factsets
+import com.ambiata.ivory.storage.fact.{FactsetGlob, Factsets}
 import com.ambiata.ivory.storage.legacy.PartitionFactThriftStorageV2
 import com.ambiata.ivory.storage.metadata.Metadata
 import com.ambiata.poacher.mr.ThriftSerialiser
@@ -59,6 +59,11 @@ object RepositoryBuilder {
       println("XXXXXXXXXXXXXXXXXXXX")
       println(s"XXXXXXXXXXXXXXXXXXXX$xx")
       println(s"Size[$xx] ${x.size}")
+      if (x.isEmpty) {
+        factsets.foreach { factsetId =>
+          println(s"Partitions[$xx] " + FactsetGlob.select(repo, factsetId).unsafePerformIO)
+        }
+      }
       x.last -> factsets
 })
 
