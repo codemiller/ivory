@@ -18,7 +18,7 @@ object GenValue {
   def valueOf(encoding: Encoding, tombstones: List[String]): Gen[Value] = encoding match {
     case p: PrimitiveEncoding => valueOfPrimOrTomb(p, tombstones)
     case sub: SubEncoding => valueOfSub(sub)
-    case ListEncoding(sub) => Gen.listOf(valueOfSub(sub)).map(ListValue)
+    case ListEncoding(sub) => GenPlus. sizedList(0, 2, valueOfSub(sub)).map(ListValue)
   }
 
   def valueOfSub(encoding: SubEncoding): Gen[SubValue] = encoding match {

@@ -11,7 +11,7 @@ object GenString {
     Gen.identifier
 
   def words: Gen[List[String]] =
-    Gen.listOf(word)
+    GenPlus.sizedList(1, 3, word)
 
   def sentence: Gen[String] =
     words.map(_.mkString(" "))
