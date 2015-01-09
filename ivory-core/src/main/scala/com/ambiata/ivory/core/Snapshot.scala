@@ -6,6 +6,7 @@ case class Snapshot(
 , store: FeatureStore
 , dictionary: Option[Identified[DictionaryId, Dictionary]]
 , bytes: Bytes
+, format: SnapshotFormat
 ) {
   def toMetadata: SnapshotMetadata =
     SnapshotMetadata(id, date, store.id, dictionary.map(_.id))

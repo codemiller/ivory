@@ -67,7 +67,8 @@ object GenRepository {
     s <- store
     d <- GenDictionary.identified
     b <- bytes
-  } yield Snapshot(i, x, s, d.some, b)
+    f <- GenVersion.snapshot
+  } yield Snapshot(i, x, s, d.some, b, f)
 
   def partition: Gen[Partition] = for {
     n <- GenString.namespace

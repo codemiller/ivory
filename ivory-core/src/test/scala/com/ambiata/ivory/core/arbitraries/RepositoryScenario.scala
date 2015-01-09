@@ -111,19 +111,20 @@ object RepositoryScenario {
         latest    <- Gen.choose(1, day * span * 5)
         bytes     <- arbitrary[Bytes]
         format    <- arbitrary[FactsetFormat]
+        sformat   <- arbitrary[SnapshotFormat]
         today     =  addDays(acc.epoch, day)
         // just do 1 day chunks, makes debugging significantly easier, and doesn't really help
         // coverage to do wider spans.
         store     =  nextStore(acc.commit.store, names, today, earliest, latest, format, bytes, 1)
-        snapshots =  nextSnapshots(store, acc.snapshots, today, dictionary, chance, bytes)
+        snapshots =  nextSnapshots(store, acc.snapshots, today, dictionary, chance, bytes, sformat)
         commit    = Commit(acc.commit.id.next.get, dictionary, store, acc.commit.config)
         } yield RepositoryScenario(commit <:: acc.commits, snapshots, acc.epoch, acc.at, acc.entities))
       } yield r)
 
-  def nextSnapshots(store: FeatureStore, snapshots: List[Snapshot], today: Date, dictionary: Identified[DictionaryId, Dictionary], create: Boolean, bytes: Bytes) = {
+  def nextSnapshots(store: FeatureStore, snapshots: List[Snapshot], today: Date, dictionary: Identified[DictionaryId, Dictionary], create: Boolean, bytes: Bytes, format: SnapshotFormat) = {
     val current = if (snapshots.isEmpty) SnapshotId.initial.some else snapshots.map(_.id).maximum
     val next = current.flatMap(_.next)
-    snapshots ++ next.map(id => Snapshot(id, today, store, dictionary.some, bytes)).filter(_ => create).toList
+    snapshots ++ next.map(id => Snapshot(id, today, store, dictionary.some, bytes, format)).filter(_ => create).toList
   }
 
   def nextStore(store: FeatureStore, names: List[Namespace], today: Date, earliest: Int, latest: Int, format: FactsetFormat, bytes: Bytes, chunk: Int): FeatureStore = (for {

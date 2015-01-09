@@ -2,6 +2,7 @@ package com.ambiata.ivory.storage.metadata
 
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.storage._
+import com.ambiata.ivory.storage.manifest.SnapshotManifest
 import com.ambiata.mundane.control._
 import com.ambiata.notion.core._
 
@@ -31,7 +32,8 @@ object SnapshotStorage {
     store <- FeatureStoreTextStorage.fromId(repository, metadata.storeId)
     dictionary <- metadata.dictionaryId.traverseU(id => Metadata.dictionaryFromIvory(repository, id).map(Identified(id, _)))
     bytes <- size(repository, metadata.id)
-  } yield Snapshot(metadata.id, metadata.date, store, dictionary, bytes)
+    format <- SnapshotManifest.io(repository, metadata.id).readOrFail.map(_.format)
+  } yield Snapshot(metadata.id, metadata.date, store, dictionary, bytes, format)
 
   /*  This should be coming from metadata, see: https://github.com/ambiata/ivory/issues/556 */
   def size(repository: Repository, id: SnapshotId): RIO[Bytes] =

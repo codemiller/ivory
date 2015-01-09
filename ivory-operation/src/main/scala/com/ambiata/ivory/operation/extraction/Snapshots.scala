@@ -57,10 +57,11 @@ object Snapshots {
     output   =  hr.toIvoryLocation(Repository.snapshot(id))
     stats    <- SnapshotJob.run(hr, plan, reducers, output.toHdfsPath)
     _        <- DictionaryTextStorageV2.toKeyStore(repository, Repository.snapshot(id) / ".dictionary", commit.dictionary.value)
-    _        <- SnapshotManifest.io(repository, id).write(SnapshotManifest.createLatest(commit.id, id, date))
+    manifest  = SnapshotManifest.createLatest(commit.id, id, date)
+    _        <- SnapshotManifest.io(repository, id).write(manifest)
     _        <- SnapshotStats.save(repository, id, stats)
     bytes    <- SnapshotStorage.size(repository, id)
-  } yield Snapshot(id, date, commit.store, commit.dictionary.some, bytes)
+  } yield Snapshot(id, date, commit.store, commit.dictionary.some, bytes, manifest.format)
 
   def planner(repository: Repository, flags: IvoryFlags, commit: Commit, ids: List[SnapshotId], date: Date): RIO[SnapshotPlan] = {
     val source = SnapshotStorage.source(repository)
