@@ -30,7 +30,14 @@ object IvoryInputs {
       case FactsetDataset(factset) =>
         Nil
       case SnapshotDataset(snapshot) =>
-        List(repository.toIvoryLocation(Repository.snapshot(snapshot.id)).toHdfsPath)
+        val path: Path = repository.toIvoryLocation(Repository.snapshot(snapshot.id)).toHdfsPath
+        snapshot.format match {
+          case SnapshotFormat.V1 =>
+            List(path)
+          case SnapshotFormat.V2 =>
+            snapshot.sized.fold(Crash.error(Crash.Invariant, "Snapshot format v2 should have namespaces, but none provided!"),
+                                _.map(s => new Path(path, s.value.name)))
+        }
     }))
     ProxyInputFormat.configure(context, job, List(factsets, snapshots))
   }

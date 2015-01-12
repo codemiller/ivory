@@ -27,12 +27,12 @@ class SquashMapper extends Mapper[NullWritable, BytesWritable, BytesWritable, By
 
   val emitter: MrEmitter[NullWritable, BytesWritable, BytesWritable, BytesWritable] = MrEmitter()
 
-  override def setup(context: MapperContext): Unit = {
+  override def setup(context: MapperContext[NullWritable]): Unit = {
     val ctx = MrContext.fromConfiguration(context.getConfiguration)
     ctx.thriftCache.pop(context.getConfiguration, SnapshotJob.Keys.FeatureIdLookup, lookup)
   }
 
-  override def map(key: NullWritable, value: BytesWritable, context: MapperContext): Unit = {
+  override def map(key: NullWritable, value: BytesWritable, context: MapperContext[NullWritable]): Unit = {
     serializer.fromBytesViewUnsafe(fact, value.getBytes, 0, value.getLength)
     emitter.context = context
     val featureIdString = fact.featureId.toString
@@ -55,7 +55,7 @@ class SquashMapperFilter extends SquashMapper {
   var entities: Set[String] = null
   var features: Set[String] = null
 
-  override def setup(context: MapperContext): Unit = {
+  override def setup(context: MapperContext[NullWritable]): Unit = {
     super.setup(context)
     val ctx = MrContext.fromConfiguration(context.getConfiguration)
     val filter = new EntityFilterLookup

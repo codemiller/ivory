@@ -51,7 +51,11 @@ object SnapshotJob {
     job.setOutputValueClass(classOf[BytesWritable])
 
     // input
-    IvoryInputs.configure(ctx, job, repository, plan.datasets, classOf[SnapshotFactsetMapper], classOf[SnapshotIncrementalMapper])
+    val incrementalMapper = plan.snapshot.map(_.format match {
+      case SnapshotFormat.V1 => classOf[SnapshotV1IncrementalMapper]
+      case SnapshotFormat.V2 => classOf[SnapshotV2IncrementalMapper]
+    }).getOrElse(classOf[SnapshotV1IncrementalMapper])
+    IvoryInputs.configure(ctx, job, repository, plan.datasets, classOf[SnapshotFactsetMapper], incrementalMapper)
 
     // output
     val tmpout = new Path(ctx.output, "snap")
@@ -66,6 +70,7 @@ object SnapshotJob {
 
     // cache / config initializtion
     job.getConfiguration.set(Keys.SnapshotDate, plan.date.int.toString) // FIX why int toString and not render/parse date?
+    plan.snapshot.foreach(s => job.getConfiguration.set(Keys.SnapshotFormat, s.format.toStringFormat))
     ctx.thriftCache.push(job, Keys.FactsetLookup, FactsetLookups.priorityTable(plan.datasets))
     ctx.thriftCache.push(job, Keys.FactsetVersionLookup, FactsetLookups.versionTable(plan.datasets))
     val (featureIdLookup, windowLookup) = windowTable(plan.commit.dictionary.value, plan.commit.dictionary.value.windows.byFeature(plan.date))
@@ -109,11 +114,12 @@ object SnapshotJob {
     val FactsetVersionLookup = ThriftCache.Key("factset-version-lookup")
     val WindowLookup = ThriftCache.Key("factset-window-lookup")
     val FeatureIsSetLookup = ThriftCache.Key("feature-is-set-lookup")
+    val SnapshotFormat = "snapshot-format"
   }
 }
 
 object SnapshotMapper {
-  type MapperContext = Mapper[NullWritable, BytesWritable, BytesWritable, BytesWritable]#Context
+  type MapperContext[K <: Writable] = Mapper[K, BytesWritable, BytesWritable, BytesWritable]#Context
 }
 
 /**
@@ -168,7 +174,7 @@ class SnapshotFactsetMapper extends CombinableMapper[NullWritable, BytesWritable
 
   val featureIdLookup = new FeatureIdLookup
 
-  override def setupSplit(context: MapperContext, split: InputSplit): Unit = {
+  override def setupSplit(context: MapperContext[NullWritable], split: InputSplit): Unit = {
     ctx = MrContext.fromConfiguration(context.getConfiguration)
     strDate = context.getConfiguration.get(SnapshotJob.Keys.SnapshotDate)
     date = Date.fromInt(strDate.toInt).getOrElse(Crash.error(Crash.DataIntegrity, s"Invalid snapshot date '${strDate}'"))
@@ -189,7 +195,7 @@ class SnapshotFactsetMapper extends CombinableMapper[NullWritable, BytesWritable
    * 1. snapshot.<version>.ok - number of facts read
    * 2. snapshot.<version>.skip - number of facts skipped because they were in the future
    */
-  override def map(key: NullWritable, value: BytesWritable, context: MapperContext): Unit = {
+  override def map(key: NullWritable, value: BytesWritable, context: MapperContext[NullWritable]): Unit = {
     emitter.context = context
     SnapshotFactsetMapper.map(tfact, date, converter, value, priority, kout, vout, emitter, okCounter, skipCounter, dropCounter,
       serializer, featureIdLookup)
@@ -223,7 +229,7 @@ object SnapshotFactsetMapper {
 /**
  * Incremental snapshot mapper.
  */
-class SnapshotIncrementalMapper extends CombinableMapper[NullWritable, BytesWritable, BytesWritable, BytesWritable] {
+class SnapshotIncrementalMapper[K <: Writable] extends CombinableMapper[K, BytesWritable, BytesWritable, BytesWritable] {
   import SnapshotMapper._
 
   /** Thrift deserializer */
@@ -235,11 +241,8 @@ class SnapshotIncrementalMapper extends CombinableMapper[NullWritable, BytesWrit
   /** Output value, created once per mapper and mutated for each record */
   val vout = Writables.bytesWritable(4096)
 
-  /** Empty Fact, created once per mapper and mutated for each record */
-  val fact = new NamespacedThriftFact with NamespacedThriftFactDerived
-
-  /** Class to emit the key/value bytes, created once per mapper */
-  val emitter: MrEmitter[NullWritable, BytesWritable, BytesWritable, BytesWritable] = MrEmitter()
+  /** The Format of the incremental snapshot */
+  var format: SnapshotFormat = null
 
   /** Class to count number of non skipped facts, created once per mapper */
   var okCounter: Counter = null
@@ -249,25 +252,81 @@ class SnapshotIncrementalMapper extends CombinableMapper[NullWritable, BytesWrit
 
   val featureIdLookup = new FeatureIdLookup
 
-  override def setupSplit(context: MapperContext, split: InputSplit): Unit = {
+  override def setupSplit(context: MapperContext[K], split: InputSplit): Unit = {
     super.setup(context)
     val ctx = MrContext.fromConfiguration(context.getConfiguration)
     ctx.thriftCache.pop(context.getConfiguration, SnapshotJob.Keys.FeatureIdLookup, featureIdLookup)
+    val strFormat = Option(context.getConfiguration.get(SnapshotJob.Keys.SnapshotFormat)).getOrElse(Crash.error(Crash.DataIntegrity, "SnapshotFormat not configured"))
+    format = SnapshotFormat.fromString(strFormat).getOrElse(Crash.error(Crash.DataIntegrity, s"Invalid snapshot format '${strFormat}'"))
     okCounter = MrCounter("ivory", "snapshot.incr.ok", context)
     dropCounter = MrCounter("ivory", "drop", context)
   }
+}
 
-  override def map(key: NullWritable, value: BytesWritable, context: MapperContext): Unit = {
+class SnapshotV1IncrementalMapper extends SnapshotIncrementalMapper[NullWritable] {
+  import SnapshotMapper._
+
+  /** Empty Fact, created once per mapper and mutated for each record */
+  val fact = new NamespacedThriftFact with NamespacedThriftFactDerived
+
+  /** Class to emit the key/value bytes, created once per mapper */
+  val emitter: MrEmitter[NullWritable, BytesWritable, BytesWritable, BytesWritable] = MrEmitter()
+
+  override def map(key: NullWritable, value: BytesWritable, context: MapperContext[NullWritable]): Unit = {
     emitter.context = context
-    SnapshotIncrementalMapper.map(fact, value, Priority.Max, kout, vout, emitter, okCounter, dropCounter, serializer, featureIdLookup)
+    SnapshotIncrementalMapper.mapV1(fact, value, Priority.Max, kout, vout, emitter, okCounter, dropCounter, serializer, featureIdLookup)
+  }
+}
+
+class SnapshotV2IncrementalMapper extends SnapshotIncrementalMapper[IntWritable] {
+  import SnapshotMapper._
+
+  /** Thrift object provided from sub class, created once per mapper */
+  val tfact = new ThriftFact
+
+  /** Class to emit the key/value bytes, created once per mapper */
+  val emitter: MrEmitter[IntWritable, BytesWritable, BytesWritable, BytesWritable] = MrEmitter()
+
+  /** Namespace of the  */
+  var namespace: String = null
+
+  override def setupSplit(context: MapperContext[IntWritable], split: InputSplit): Unit = {
+    super.setupSplit(context, split)
+    namespace = Namespace.nameFromStringDisjunction(MrContext.getSplitPath(split).getParent.getName) match {
+      case scalaz.\/-(n) => n.name
+      case scalaz.-\/(e) => Crash.error(Crash.DataIntegrity, s"Can not parse snapshot namespace from path ${e}")
+    }
+  }
+
+  override def map(key: IntWritable, value: BytesWritable, context: MapperContext[IntWritable]): Unit = {
+    emitter.context = context
+    SnapshotIncrementalMapper.mapV2(tfact, key, value, Priority.Max, kout, vout, emitter, okCounter, dropCounter, serializer, featureIdLookup, namespace)
   }
 }
 
 object SnapshotIncrementalMapper {
-  def map(fact: NamespacedThriftFact with NamespacedThriftFactDerived, bytes: BytesWritable, priority: Priority,
+  def mapV1(fact: NamespacedThriftFact with NamespacedThriftFactDerived, bytes: BytesWritable, priority: Priority,
           kout: BytesWritable, vout: BytesWritable, emitter: Emitter[BytesWritable, BytesWritable], okCounter: Counter,
           dropCounter: Counter, serializer: ThriftSerialiser, featureIdLookup: FeatureIdLookup) {
     serializer.fromBytesViewUnsafe(fact, bytes.getBytes, 0, bytes.getLength)
+    emit(fact, bytes, priority, kout, vout, emitter, okCounter, dropCounter, serializer, featureIdLookup)
+  }
+
+  def mapV2(tfact: ThriftFact, key: IntWritable, value: BytesWritable, priority: Priority, kout: BytesWritable,
+            vout: BytesWritable, emitter: Emitter[BytesWritable, BytesWritable], okCounter: Counter, dropCounter: Counter,
+            serializer: ThriftSerialiser, featureIdLookup: FeatureIdLookup, namespace: String) {
+    serializer.fromBytesViewUnsafe(tfact, value.getBytes, 0, value.getLength)
+    val date = Date.unsafeFromInt(key.get)
+    val fact = FatThriftFact(namespace, date, tfact)
+    val bytes = serializer.toBytes(fact)
+
+    // WARNING reusing input value BytesWritable
+    value.set(bytes, 0, bytes.length)
+    emit(fact, value, priority, kout, vout, emitter, okCounter, dropCounter, serializer, featureIdLookup)
+  }
+
+  def emit(fact: Fact, bytes: BytesWritable, priority: Priority, kout: BytesWritable, vout: BytesWritable, emitter: Emitter[BytesWritable, BytesWritable],
+           okCounter: Counter, dropCounter: Counter, serializer: ThriftSerialiser, featureIdLookup: FeatureIdLookup) {
     val name = fact.featureId.toString
     val featureId = featureIdLookup.getIds.get(name)
     if (featureId == null)
