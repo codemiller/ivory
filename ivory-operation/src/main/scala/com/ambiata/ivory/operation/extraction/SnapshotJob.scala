@@ -19,8 +19,7 @@ import scala.collection.JavaConverters._
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io._
 import org.apache.hadoop.mapreduce.{Counter => _, _}
-import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat
-import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat
+import org.apache.hadoop.mapreduce.lib.output.{FileOutputFormat, SequenceFileOutputFormat, MultipleOutputs, LazyOutputFormat}
 
 /**
  * This is a hand-coded MR job to squeeze the most out of snapshot performance.
@@ -58,9 +57,9 @@ object SnapshotJob {
     IvoryInputs.configure(ctx, job, repository, plan.datasets, classOf[SnapshotFactsetMapper], incrementalMapper)
 
     // output
-    val tmpout = new Path(ctx.output, "snap")
-    job.setOutputFormatClass(classOf[SequenceFileOutputFormat[_, _]])
-    FileOutputFormat.setOutputPath(job, tmpout)
+    LazyOutputFormat.setOutputFormatClass(job, classOf[SequenceFileOutputFormat[_, _]])
+    MultipleOutputs.addNamedOutput(job, Keys.Out, classOf[SequenceFileOutputFormat[_, _]],  classOf[IntWritable], classOf[BytesWritable])
+    FileOutputFormat.setOutputPath(job, ctx.output)
 
     // compression
     repository.codec.foreach(cc => {
@@ -70,7 +69,6 @@ object SnapshotJob {
 
     // cache / config initializtion
     job.getConfiguration.set(Keys.SnapshotDate, plan.date.int.toString) // FIX why int toString and not render/parse date?
-    plan.snapshot.foreach(s => job.getConfiguration.set(Keys.SnapshotFormat, s.format.toStringFormat))
     ctx.thriftCache.push(job, Keys.FactsetLookup, FactsetLookups.priorityTable(plan.datasets))
     ctx.thriftCache.push(job, Keys.FactsetVersionLookup, FactsetLookups.versionTable(plan.datasets))
     val (featureIdLookup, windowLookup) = windowTable(plan.commit.dictionary.value, plan.commit.dictionary.value.windows.byFeature(plan.date))
@@ -85,7 +83,7 @@ object SnapshotJob {
     // commit files to factset
     for {
       _ <- Committer.commit(ctx, {
-        case "snap" => output
+        case Keys.Out => output
       }, true).run(repository.configuration)
       now <- RIO.fromIO(DateTime.now)
     } yield {
@@ -114,7 +112,7 @@ object SnapshotJob {
     val FactsetVersionLookup = ThriftCache.Key("factset-version-lookup")
     val WindowLookup = ThriftCache.Key("factset-window-lookup")
     val FeatureIsSetLookup = ThriftCache.Key("feature-is-set-lookup")
-    val SnapshotFormat = "snapshot-format"
+    val Out = "snap"
   }
 }
 
@@ -229,7 +227,7 @@ object SnapshotFactsetMapper {
 /**
  * Incremental snapshot mapper.
  */
-class SnapshotIncrementalMapper[K <: Writable] extends CombinableMapper[K, BytesWritable, BytesWritable, BytesWritable] {
+abstract class SnapshotIncrementalMapper[K <: Writable] extends CombinableMapper[K, BytesWritable, BytesWritable, BytesWritable] {
   import SnapshotMapper._
 
   /** Thrift deserializer */
@@ -241,8 +239,8 @@ class SnapshotIncrementalMapper[K <: Writable] extends CombinableMapper[K, Bytes
   /** Output value, created once per mapper and mutated for each record */
   val vout = Writables.bytesWritable(4096)
 
-  /** The Format of the incremental snapshot */
-  var format: SnapshotFormat = null
+  /** Class to emit the key/value bytes, created once per mapper */
+  val emitter: MrEmitter[K, BytesWritable, BytesWritable, BytesWritable] = MrEmitter()
 
   /** Class to count number of non skipped facts, created once per mapper */
   var okCounter: Counter = null
@@ -256,8 +254,6 @@ class SnapshotIncrementalMapper[K <: Writable] extends CombinableMapper[K, Bytes
     super.setup(context)
     val ctx = MrContext.fromConfiguration(context.getConfiguration)
     ctx.thriftCache.pop(context.getConfiguration, SnapshotJob.Keys.FeatureIdLookup, featureIdLookup)
-    val strFormat = Option(context.getConfiguration.get(SnapshotJob.Keys.SnapshotFormat)).getOrElse(Crash.error(Crash.DataIntegrity, "SnapshotFormat not configured"))
-    format = SnapshotFormat.fromString(strFormat).getOrElse(Crash.error(Crash.DataIntegrity, s"Invalid snapshot format '${strFormat}'"))
     okCounter = MrCounter("ivory", "snapshot.incr.ok", context)
     dropCounter = MrCounter("ivory", "drop", context)
   }
@@ -268,9 +264,6 @@ class SnapshotV1IncrementalMapper extends SnapshotIncrementalMapper[NullWritable
 
   /** Empty Fact, created once per mapper and mutated for each record */
   val fact = new NamespacedThriftFact with NamespacedThriftFactDerived
-
-  /** Class to emit the key/value bytes, created once per mapper */
-  val emitter: MrEmitter[NullWritable, BytesWritable, BytesWritable, BytesWritable] = MrEmitter()
 
   override def map(key: NullWritable, value: BytesWritable, context: MapperContext[NullWritable]): Unit = {
     emitter.context = context
@@ -284,10 +277,7 @@ class SnapshotV2IncrementalMapper extends SnapshotIncrementalMapper[IntWritable]
   /** Thrift object provided from sub class, created once per mapper */
   val tfact = new ThriftFact
 
-  /** Class to emit the key/value bytes, created once per mapper */
-  val emitter: MrEmitter[IntWritable, BytesWritable, BytesWritable, BytesWritable] = MrEmitter()
-
-  /** Namespace of the  */
+  /** Namespace of each Fact, created once per mapper, taken from split path */
   var namespace: String = null
 
   override def setupSplit(context: MapperContext[IntWritable], split: InputSplit): Unit = {
@@ -350,7 +340,7 @@ object SnapshotIncrementalMapper {
  *
  * The output is a sequence file, with no key, and the bytes of the serialized NamespacedFact.
  */
-class SnapshotReducer extends Reducer[BytesWritable, BytesWritable, NullWritable, BytesWritable] {
+class SnapshotReducer extends Reducer[BytesWritable, BytesWritable, IntWritable, BytesWritable] {
   import SnapshotReducer._
 
   /** Thrift deserializer */
@@ -359,11 +349,14 @@ class SnapshotReducer extends Reducer[BytesWritable, BytesWritable, NullWritable
   /** Empty Fact, created once per reducer and mutated per record */
   val fact = new NamespacedThriftFact with NamespacedThriftFactDerived
 
+  /** Output key, created once per reducer and mutated per record */
+  val kout = new IntWritable(0)
+
   /** Output value, created once per reducer and mutated per record */
   val vout = Writables.bytesWritable(4096)
 
   /** Class to emit the key/value bytes, created once per mapper */
-  val emitter: MrEmitter[BytesWritable, BytesWritable, NullWritable, BytesWritable] = MrEmitter()
+  var emitter: MrMultiEmitter[IntWritable, BytesWritable] = null
 
   val mutator = new FactByteMutator
 
@@ -391,13 +384,15 @@ class SnapshotReducer extends Reducer[BytesWritable, BytesWritable, NullWritable
     // Kinda sucky for debugging - we're using ints for counters because Hadoop limits the size of counter names to 64
     feaureIdStrings = FeatureLookups.sparseMapToArray(windowLookupThrift.getWindow.asScala.toList
       .map { case (fid, _) => fid.intValue() -> fid.toString }, "")
+  
+    emitter = MrMultiEmitter(new MultipleOutputs(context))
+    emitter.name = SnapshotJob.Keys.Out
   }
 
   override def reduce(key: BytesWritable, iter: JIterable[BytesWritable], context: ReducerContext): Unit = {
-    emitter.context = context
     val feature = SnapshotWritable.GroupingEntityFeatureId.getFeatureId(key)
     val windowStart = Date.unsafeFromInt(windowLookup(feature))
-    val count = SnapshotReducer.reduce(fact, iter.iterator, mutator, emitter, vout, windowStart, isSetLookup(feature))
+    val count = SnapshotReducer.reduce(fact, iter.iterator, mutator, emitter, kout, vout, windowStart, isSetLookup(feature))
 // FIX MAX COUNTERS    featureCounter.count(feaureIdStrings(feature), count)
     ()
   }
@@ -411,14 +406,13 @@ class SnapshotReducer extends Reducer[BytesWritable, BytesWritable, NullWritable
  *
  ********************************************************** */
 object SnapshotReducer {
-  type ReducerContext = Reducer[BytesWritable, BytesWritable, NullWritable, BytesWritable]#Context
+  type ReducerContext = Reducer[BytesWritable, BytesWritable, IntWritable, BytesWritable]#Context
 
   val sentinelDateTime = DateTime.unsafeFromLong(-1)
 
   def reduce(fact: MutableFact, iter: JIterator[BytesWritable], mutator: FactByteMutator,
-             emitter: Emitter[NullWritable, BytesWritable], out: BytesWritable, windowStart: Date, isSet: Boolean): Int = {
+             emitter: MultiEmitter[IntWritable, BytesWritable], kout: IntWritable, vout: BytesWritable, windowStart: Date, isSet: Boolean): Int = {
     var datetime = sentinelDateTime
-    val kout = NullWritable.get()
     var count = 0
     while(iter.hasNext) {
       val next = iter.next
@@ -430,16 +424,19 @@ object SnapshotReducer {
         // the last fact within the window, or another fact within the window
         // As such we can't do anything on the first fact
         if (datetime != sentinelDateTime && Window.isFactWithinWindow(windowStart, fact)) {
-          emitter.emit(kout, out)
+          emitter.emit(kout, vout)
           count += 1
         }
         datetime = fact.datetime
         // Store the current fact, which may or may not be emitted depending on the next fact
-        mutator.pipe(next, out)
+        mutator.pipe(next, vout)
+        kout.set(fact.date.int)
+        // write output to namespaced subdirs
+        emitter.path = fact.namespace.name
       }
     }
     // _Always_ emit the last fact, which will be within the window, or the last fact
-    emitter.emit(kout, out)
+    emitter.emit(kout, vout)
     count += 1
     count
   }

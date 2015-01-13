@@ -1,12 +1,13 @@
 package com.ambiata.ivory.mr
 
 import com.ambiata.ivory.core._
+import com.ambiata.ivory.core.thrift.ThriftFact
 import com.ambiata.poacher.mr._
-import org.apache.hadoop.io.{Text, BytesWritable, NullWritable}
+import org.apache.hadoop.io.{Text, BytesWritable, NullWritable, IntWritable}
 import java.util.{Iterator => JIterator}
 import scala.collection.JavaConverters._
 
-object MockFactMutator {
+object MockV1FactMutator {
 
   /** For testing MR code that deals with a stream of fact bytes */
   def run(facts: List[Fact])(f: (JIterator[BytesWritable], FactByteMutator, Emitter[NullWritable, BytesWritable], BytesWritable) => Unit): List[Fact] =
@@ -44,6 +45,33 @@ object MockFactMutator {
     f(facts.toIterator.map {
       fact =>
         val bytes = serialiser.toBytes(fact.toNamespacedThrift)
+        in.set(bytes, 0, bytes.length)
+        in
+    }.asJava)
+  }
+}
+
+object MockV2FactMutator {
+
+  def runKeep[A](facts: List[Fact])(f: (JIterator[BytesWritable], FactByteMutator, MultiEmitter[IntWritable, BytesWritable], IntWritable, BytesWritable) => A): (List[Fact], A) = {
+    val outFacts = new collection.mutable.ListBuffer[Fact]
+    val serialiser = ThriftSerialiser()
+    val emitter = TestMultiEmitter[IntWritable, BytesWritable, Date, ThriftFact](k => Date.unsafeFromInt(k.get),
+                                                                                 v => {
+                                                                                   val tfact = new ThriftFact
+                                                                                   serialiser.fromBytesViewUnsafe(tfact, v.getBytes, 0, v.getLength)
+                                                                                 })
+    val result = iterateFactsAsBytes(facts)(iter => f(iter, new FactByteMutator, emitter, new IntWritable(0), Writables.bytesWritable(4096)))
+    (outFacts.toList, result)
+  }
+
+  def iterateFactsAsBytes[A](facts: List[Fact])(f: JIterator[BytesWritable] => A): A = {
+    // When in Rome. This is what Hadoop does
+    val in = Writables.bytesWritable(4096)
+    val serialiser = ThriftSerialiser()
+    f(facts.toIterator.map {
+      fact =>
+        val bytes = serialiser.toBytes(fact.toThrift)
         in.set(bytes, 0, bytes.length)
         in
     }.asJava)

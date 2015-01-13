@@ -34,10 +34,16 @@ object SquashJob {
     commitId   <- Metadata.findOrCreateLatestCommitId(repository)
     commit     <- CommitStorage.byIdOrFail(repository, commitId)
     dictionary =  commit.dictionary.value
+    snapshot   <- SnapshotStorage.byIdOrFail(repository, snapmeta.id)
     hdfsIvoryL <- repository.toIvoryLocation(Repository.snapshot(snapmeta.id)).asHdfsIvoryLocation
-    in          = ShadowOutputDataset.fromIvoryLocation(hdfsIvoryL)
-    job        <- SquashJob.initSnapshotJob(cluster.hdfsConfiguration, snapmeta.date)
-    result     <- squash(repository, dictionary, in, conf, job, cluster)
+    snapPath    = ShadowOutputDataset.fromIvoryLocation(hdfsIvoryL).hdfsPath
+    paths       = snapshot.format match {
+                    case SnapshotFormat.V1 => List(snapPath)
+                    case SnapshotFormat.V2 => snapshot.sized.fold(Crash.error(Crash.Invariant, "Snapshot format v2 should have namespaces, but none provided!"),
+                                                                  _.map(s => new Path(snapPath, s.value.name)))
+                  }
+    job        <- SquashJob.initSnapshotJob(cluster.hdfsConfiguration, snapmeta.date, snapshot.format, paths)
+    result     <- squash(repository, dictionary, paths, conf, job, cluster)
     _          <- SnapshotExtractManifest.io(cluster.toIvoryLocation(result.location)).write(SnapshotExtractManifest.create(commitId, snapmeta.id))
   } yield result -> dictionary
 
@@ -52,11 +58,11 @@ object SquashJob {
    * 2. From a chord, where a single entity may have one or more dates. It will be important to pre-calculate a starting
    *    date for every possible entity date, and then look that up per entity on the reducer.
    */
-  def squash(repository: Repository, dictionary: Dictionary, input: ShadowOutputDataset, conf: SquashConfig,
+  def squash(repository: Repository, dictionary: Dictionary, inputs: List[Path], conf: SquashConfig,
              job: (Job, MrContext), cluster: Cluster): RIO[ShadowOutputDataset] = for {
     // This is about the best we can do at the moment, until we have more size information about each feature
-    rs     <- ReducerSize.calculate(input.hdfsPath, 1.gb).run(cluster.hdfsConfiguration)
-    _      <- initJob(job._1, input.hdfsPath)
+    rs     <- ReducerSize.calculateMulti(inputs, 1.gb).run(cluster.hdfsConfiguration)
+    _      <- initJob(job._1)
     key    <- Repository.tmpDir("squash")
     hr     <- repository.asHdfsRepository
     shadow = ShadowOutputDataset.fromIvoryLocation(hr.toIvoryLocation(key))
@@ -64,30 +70,46 @@ object SquashJob {
     _      <- IvoryLocation.writeUtf8Lines(hr.toIvoryLocation(key) </> FileName.unsafe(".profile"), SquashStats.asPsvLines(prof))
   } yield shadow
 
-  def initSnapshotJob(conf: Configuration, date: Date): RIO[(Job, MrContext)] = RIO.safe {
+  def initSnapshotJob(conf: Configuration, date: Date, format: SnapshotFormat, inputs: List[Path]): RIO[(Job, MrContext)] = RIO.safe {
     val job = Job.getInstance(conf)
     val ctx = MrContextIvory.newContext("ivory-squash-snapshot", job)
+    
+    // reducer 
     job.setReducerClass(classOf[SquashReducerSnapshot])
+
+    // input
+    val mapperClass = format match {
+      case SnapshotFormat.V1 => classOf[SquashV1Mapper]
+      case SnapshotFormat.V2 => classOf[SquashV2Mapper]
+    }
+    inputs.foreach(input => {
+      println(s"Input path: $input")
+      MultipleInputs.addInputPath(job, input, classOf[SequenceFileInputFormat[_, _]], mapperClass)
+    })
+
     job.getConfiguration.set(SnapshotJob.Keys.SnapshotDate, date.int.toString)
     (job, ctx)
   }
 
-  def initChordJob(conf: Configuration, chord: Entities): RIO[(Job, MrContext)] = RIO.safe {
+  def initChordJob(conf: Configuration, chord: Entities, input: Path): RIO[(Job, MrContext)] = RIO.safe {
     val job = Job.getInstance(conf)
     val ctx = MrContextIvory.newContext("ivory-squash-chord", job)
+
+    // reducer
     job.setReducerClass(classOf[SquashReducerChord])
+
+    // input
+    println(s"Input path: $input")
+    MultipleInputs.addInputPath(job, input, classOf[SequenceFileInputFormat[_, _]], classOf[SquashV1Mapper])
+
     ctx.thriftCache.push(job, ChordJob.Keys.ChordEntitiesLookup, Entities.toChordEntities(chord))
     (job, ctx)
   }
 
-  def initJob(job: Job, input: Path): RIO[Unit] = RIO.safe[Unit] {
+  def initJob(job: Job): RIO[Unit] = RIO.safe[Unit] {
     // reducer
     job.setOutputKeyClass(classOf[NullWritable])
     job.setOutputValueClass(classOf[BytesWritable])
-
-    // input
-    println(s"Input path: $input")
-    MultipleInputs.addInputPath(job, input, classOf[SequenceFileInputFormat[_, _]], classOf[SquashMapper])
 
     // output
     job.setOutputFormatClass(classOf[SequenceFileOutputFormat[_, _]])
