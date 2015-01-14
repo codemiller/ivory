@@ -362,7 +362,7 @@ class ChordReducer extends Reducer[BytesWritable, BytesWritable, NullWritable, B
   /** Class to emit the key/value bytes, created once per mapper */
   val emitter: MrEmitter[BytesWritable, BytesWritable, NullWritable, BytesWritable] = MrEmitter()
 
-  val mutator = new FactByteMutator
+  val mutator = new ThriftByteMutator
 
   var entities: Entities = null
   var featureWindows: Array[Option[Date => Date]] = null
@@ -433,7 +433,7 @@ object ChordReducer {
     val kout = NullWritable.get()
 
     /** `windowStarts` will be the same length as `dates`, or `null` if no window is set for the current feature. */
-    def emit(fact: MutableFact, mutator: FactByteMutator, out: BytesWritable, dates: Array[Int], windowStarts: Array[Int],
+    def emit(fact: MutableFact, mutator: ThriftByteMutator, out: BytesWritable, dates: Array[Int], windowStarts: Array[Int],
              buffer: StringBuilder, previousDatetime: DateTime, date: Date, offset: Int): Int = {
       var i = offset
       // For window features _always_ emit the last fact before the window (for state-based features)
@@ -453,7 +453,7 @@ object ChordReducer {
     }
   }
 
-  def reduce(fact: MutableFact, iter: JIterator[BytesWritable], mutator: FactByteMutator,
+  def reduce(fact: MutableFact, iter: JIterator[BytesWritable], mutator: ThriftByteMutator,
              emitter: ChordWindowEmitter, out: BytesWritable, dates: Array[Int], windowStarts: Array[Int],
              buffer: StringBuilder, isSet: Boolean): Unit = {
 

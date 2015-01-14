@@ -358,7 +358,7 @@ class SnapshotReducer extends Reducer[BytesWritable, BytesWritable, IntWritable,
   /** Class to emit the key/value bytes, created once per mapper */
   var emitter: MrMultiEmitter[IntWritable, BytesWritable] = null
 
-  val mutator = new FactByteMutator
+  val mutator = new ThriftByteMutator
 
   /** Optimised array lookup for features to the window, where we know that features are simply ordered from zero */
   var windowLookup: Array[Int] = null
@@ -386,7 +386,6 @@ class SnapshotReducer extends Reducer[BytesWritable, BytesWritable, IntWritable,
       .map { case (fid, _) => fid.intValue() -> fid.toString }, "")
   
     emitter = MrMultiEmitter(new MultipleOutputs(context))
-    emitter.name = SnapshotJob.Keys.Out
   }
 
   override def reduce(key: BytesWritable, iter: JIterable[BytesWritable], context: ReducerContext): Unit = {
@@ -410,8 +409,9 @@ object SnapshotReducer {
 
   val sentinelDateTime = DateTime.unsafeFromLong(-1)
 
-  def reduce(fact: MutableFact, iter: JIterator[BytesWritable], mutator: FactByteMutator,
+  def reduce(fact: MutableFact, iter: JIterator[BytesWritable], mutator: ThriftByteMutator,
              emitter: MultiEmitter[IntWritable, BytesWritable], kout: IntWritable, vout: BytesWritable, windowStart: Date, isSet: Boolean): Int = {
+    emitter.name = SnapshotJob.Keys.Out
     var datetime = sentinelDateTime
     var count = 0
     while(iter.hasNext) {
@@ -429,9 +429,9 @@ object SnapshotReducer {
         }
         datetime = fact.datetime
         // Store the current fact, which may or may not be emitted depending on the next fact
-        mutator.pipe(next, vout)
         kout.set(fact.date.int)
-        // write output to namespaced subdirs
+        mutator.mutate(fact.toThrift, vout)
+        // emit to namespaced subdirs
         emitter.path = fact.namespace.name
       }
     }

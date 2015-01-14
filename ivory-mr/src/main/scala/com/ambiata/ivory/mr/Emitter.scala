@@ -10,6 +10,7 @@ trait Emitter[A, B] {
 }
 
 trait MultiEmitter[A, B] extends Emitter[A, B] {
+  var name: String
   var path: String
 }
 

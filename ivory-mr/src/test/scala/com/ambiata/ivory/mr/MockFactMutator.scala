@@ -7,13 +7,13 @@ import org.apache.hadoop.io.{Text, BytesWritable, NullWritable, IntWritable}
 import java.util.{Iterator => JIterator}
 import scala.collection.JavaConverters._
 
-object MockV1FactMutator {
+object MockFactMutator {
 
   /** For testing MR code that deals with a stream of fact bytes */
-  def run(facts: List[Fact])(f: (JIterator[BytesWritable], FactByteMutator, Emitter[NullWritable, BytesWritable], BytesWritable) => Unit): List[Fact] =
+  def run(facts: List[Fact])(f: (JIterator[BytesWritable], ThriftByteMutator, Emitter[NullWritable, BytesWritable], BytesWritable) => Unit): List[Fact] =
     runKeep(facts)(f)._1
 
-  def runKeep[A](facts: List[Fact])(f: (JIterator[BytesWritable], FactByteMutator, Emitter[NullWritable, BytesWritable], BytesWritable) => A): (List[Fact], A) = {
+  def runKeep[A](facts: List[Fact])(f: (JIterator[BytesWritable], ThriftByteMutator, Emitter[NullWritable, BytesWritable], BytesWritable) => A): (List[Fact], A) = {
     val outFacts = new collection.mutable.ListBuffer[Fact]
     val serialiser = ThriftSerialiser()
     val emitter = new Emitter[NullWritable, BytesWritable] {
@@ -22,8 +22,20 @@ object MockV1FactMutator {
         ()
       }
     }
-    val result = iterateFactsAsBytes(facts)(iter => f(iter, new FactByteMutator, emitter, Writables.bytesWritable(4096)))
+    val result = iterateFactsAsBytes(facts)(iter => f(iter, new ThriftByteMutator, emitter, Writables.bytesWritable(4096)))
     (outFacts.toList, result)
+  }
+
+  def runV2Keep[A](facts: List[Fact])(f: (JIterator[BytesWritable], ThriftByteMutator, MultiEmitter[IntWritable, BytesWritable], IntWritable, BytesWritable) => A): (List[(String, Fact)], A) = {
+    val serialiser = ThriftSerialiser()
+    val emitter = TestMultiEmitter[IntWritable, BytesWritable, Fact]((k, v, p) => {
+      val d = Date.unsafeFromInt(k.get)
+      val tfact = new ThriftFact
+      serialiser.fromBytesViewUnsafe(tfact, v.getBytes, 0, v.getLength)
+      FatThriftFact(p, d, tfact)
+    })
+    val result = iterateFactsAsBytes(facts)(iter => f(iter, new ThriftByteMutator, emitter, new IntWritable(0), Writables.bytesWritable(4096)))
+    (emitter.emitted.toList, result)
   }
 
   def runText(facts: List[Fact])(f: (JIterator[BytesWritable], Emitter[NullWritable, Text], Text) => Unit): List[String] = {
@@ -45,33 +57,6 @@ object MockV1FactMutator {
     f(facts.toIterator.map {
       fact =>
         val bytes = serialiser.toBytes(fact.toNamespacedThrift)
-        in.set(bytes, 0, bytes.length)
-        in
-    }.asJava)
-  }
-}
-
-object MockV2FactMutator {
-
-  def runKeep[A](facts: List[Fact])(f: (JIterator[BytesWritable], FactByteMutator, MultiEmitter[IntWritable, BytesWritable], IntWritable, BytesWritable) => A): (List[Fact], A) = {
-    val outFacts = new collection.mutable.ListBuffer[Fact]
-    val serialiser = ThriftSerialiser()
-    val emitter = TestMultiEmitter[IntWritable, BytesWritable, Date, ThriftFact](k => Date.unsafeFromInt(k.get),
-                                                                                 v => {
-                                                                                   val tfact = new ThriftFact
-                                                                                   serialiser.fromBytesViewUnsafe(tfact, v.getBytes, 0, v.getLength)
-                                                                                 })
-    val result = iterateFactsAsBytes(facts)(iter => f(iter, new FactByteMutator, emitter, new IntWritable(0), Writables.bytesWritable(4096)))
-    (outFacts.toList, result)
-  }
-
-  def iterateFactsAsBytes[A](facts: List[Fact])(f: JIterator[BytesWritable] => A): A = {
-    // When in Rome. This is what Hadoop does
-    val in = Writables.bytesWritable(4096)
-    val serialiser = ThriftSerialiser()
-    f(facts.toIterator.map {
-      fact =>
-        val bytes = serialiser.toBytes(fact.toThrift)
         in.set(bytes, 0, bytes.length)
         in
     }.asJava)

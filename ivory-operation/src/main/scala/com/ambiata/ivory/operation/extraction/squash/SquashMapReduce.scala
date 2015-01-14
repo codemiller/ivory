@@ -112,7 +112,7 @@ trait SquashReducer[A <: Writable] extends Reducer[BytesWritable, BytesWritable,
   val emitter = MrEmitter[BytesWritable, BytesWritable, NullWritable, A]()
   val vout: A
 
-  val factEmitter = new FactByteMutator
+  val factEmitter = new ThriftByteMutator
   val lookup = new FeatureReductionLookup()
   var isSetLookup: Array[Boolean] = null
   val fact = createMutableFact

@@ -13,15 +13,13 @@ case class TestEmitter() extends Emitter[BytesWritable, BytesWritable] {
   }
 }
 
-case class TestMultiEmitter[K <: Writable, V <: Writable, KV, VV](k: K => KV, v: V => VV) extends MultiEmitter[K, V] {
+case class TestMultiEmitter[K <: Writable, V <: Writable, A](f: (K, V, String) => A) extends MultiEmitter[K, V] {
   import scala.collection.mutable.ListBuffer
-  val emittedKeys: ListBuffer[(String, String, KV)] = ListBuffer()
-  val emittedVals: ListBuffer[(String, String, VV)] = ListBuffer()
+  val emitted: ListBuffer[(String, A)] = ListBuffer()
   var name: String = null
   var path: String = null
   def emit(kout: K, vout: V) {
-    emittedKeys += ((name, path, k(kout)))
-    emittedVals += ((name, path, v(vout)))
+    emitted += ((name, f(kout, vout, path)))
     ()
   }
 }

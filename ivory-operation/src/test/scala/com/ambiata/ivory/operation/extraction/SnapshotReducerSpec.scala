@@ -39,23 +39,23 @@ SnapshotReducerSpec
 
   def window = prop((dts: NonEmptyList[DateTime], fact: Fact, date: Date) => {
     val facts = SnapshotFacts(dts, fact, date)
-    MockV2FactMutator.runKeep(facts.facts) { (bytes, mutator, emitter, kout, vout) =>
+    MockFactMutator.runV2Keep(facts.facts) { (bytes, mutator, emitter, kout, vout) =>
       SnapshotReducer.reduce(createMutableFact, bytes, mutator, emitter, kout, vout, date, isSet = false)
-    } ==== (facts.expected -> facts.expected.size)
+    } ==== (facts.expected.map(SnapshotJob.Keys.Out ->) -> facts.expected.size)
   }).set(maxSize = 10)
 
   def windowPriority = prop((dts: NonEmptyList[DateTime], fact: Fact, date: Date) => {
     val facts = SnapshotFacts(dts, fact, date)
-    MockV2FactMutator.runKeep(facts.factsDupe) { (bytes, mutator, emitter, kout, vout) =>
+    MockFactMutator.runV2Keep(facts.factsDupe) { (bytes, mutator, emitter, kout, vout) =>
       SnapshotReducer.reduce(createMutableFact, bytes, mutator, emitter, kout, vout, date, isSet = false)
-    } ==== (facts.expected -> facts.expected.size)
+    } ==== (facts.expected.map(SnapshotJob.Keys.Out ->) -> facts.expected.size)
   }).set(maxSize = 10)
 
   def windowIsSet = prop((dts: NonEmptyList[DateTime], fact: Fact, date: Date) => {
     val facts = SnapshotFacts(dts, fact, date)
-    MockV2FactMutator.runKeep(facts.factsDupe) { (bytes, mutator, emitter, kout, vout) =>
+    MockFactMutator.runV2Keep(facts.factsDupe) { (bytes, mutator, emitter, kout, vout) =>
       SnapshotReducer.reduce(createMutableFact, bytes, mutator, emitter, kout, vout, date, isSet = true)
-    } ==== (facts.expectedSet -> facts.expectedSet.size)
+    } ==== (facts.expectedSet.map(SnapshotJob.Keys.Out ->) -> facts.expectedSet.size)
   }).set(maxSize = 10)
 
   /** We only care about the DateTime for reducing snapshots, so we reuse the same fact */

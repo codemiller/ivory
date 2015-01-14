@@ -15,7 +15,7 @@ object EntityIterator {
    * Encapsulates the logic of iterating over a set of ordered facts, processing each one and then 'emitting' when
    * a new entity is encountered or the end is reached.
    */
-  def iterate[A](fact: MutableFact, mutator: FactByteMutator, iter: JIterator[BytesWritable])
+  def iterate[A](fact: MutableFact, mutator: ThriftByteMutator, iter: JIterator[BytesWritable])
                 (initial: A, callback: EntityCallback[A]): Unit = {
     val state = new SquashReducerEntityState(null, Namespace("empty"))
 
@@ -46,13 +46,13 @@ object EntityIterator {
 }
 
 trait SquashReducerState[A] {
-  def reduceAll(fact: MutableFact, emitFact: MutableFact, reducerPool: ReducerPool, mutator: FactByteMutator,
+  def reduceAll(fact: MutableFact, emitFact: MutableFact, reducerPool: ReducerPool, mutator: ThriftByteMutator,
                 iter: JIterator[BytesWritable], emitter: Emitter[NullWritable, A], out: A): Unit
 }
 
 class SquashReducerStateSnapshot(date: Date) extends SquashReducerState[BytesWritable] {
 
-  def reduceAll(fact: MutableFact, emitFact: MutableFact, reducerPool: ReducerPool, mutator: FactByteMutator,
+  def reduceAll(fact: MutableFact, emitFact: MutableFact, reducerPool: ReducerPool, mutator: ThriftByteMutator,
                 iter: JIterator[BytesWritable], emitter: Emitter[NullWritable, BytesWritable], out: BytesWritable): Unit = {
     // Fact is null by default, and we want to re-use the same one
     emitFact.setFact(new ThriftFact)
@@ -77,7 +77,7 @@ class SquashReducerStateChord(chord: Entities) extends SquashReducerState[BytesW
 
   class SquashChordReducerEntityState(var dates: Array[Int], var reducers: Int => List[(FeatureReduction, Reduction)])
 
-  def reduceAll(fact: MutableFact, emitFact: MutableFact, reducerPool: ReducerPool, mutator: FactByteMutator,
+  def reduceAll(fact: MutableFact, emitFact: MutableFact, reducerPool: ReducerPool, mutator: ThriftByteMutator,
                 iter: JIterator[BytesWritable], emitter: Emitter[NullWritable, BytesWritable], out: BytesWritable): Unit = {
     val buffer = new StringBuilder
     // Fact is null by default, and we want to re-use the same one
@@ -144,7 +144,7 @@ class SquashReducerStateChord(chord: Entities) extends SquashReducerState[BytesW
 
 class SquashReducerStateDump(date: Date) extends SquashReducerState[Text] {
 
-  def reduceAll(fact: MutableFact, emitFact: MutableFact, reducerPool: ReducerPool, mutator: FactByteMutator,
+  def reduceAll(fact: MutableFact, emitFact: MutableFact, reducerPool: ReducerPool, mutator: ThriftByteMutator,
                 iter: JIterator[BytesWritable], emitter: Emitter[NullWritable, Text], out: Text): Unit = {
 
     val reducers = reducerPool.compile(Array(date))(0)
@@ -178,7 +178,7 @@ object SquashReducerState {
   }
 
   // Write out the final reduced values
-  def emit(emitFact: MutableFact, mutator: FactByteMutator, reducers: Iterable[(FeatureReduction, Reduction)],
+  def emit(emitFact: MutableFact, mutator: ThriftByteMutator, reducers: Iterable[(FeatureReduction, Reduction)],
            emitter: Emitter[NullWritable, BytesWritable], out: BytesWritable, namespace: Namespace, entity: String,
            date: Date): Unit = {
     // Use emitFact here to avoid clobbering values in fact
