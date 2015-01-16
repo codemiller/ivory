@@ -335,7 +335,6 @@ object ChordIncrementalMapper {
       emitter.emit(kout, vout)
     }
   }
-
 }
 
 /**

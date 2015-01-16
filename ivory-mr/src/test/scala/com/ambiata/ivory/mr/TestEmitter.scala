@@ -18,6 +18,7 @@ case class TestMultiEmitter[K <: Writable, V <: Writable, A](f: (K, V, String) =
   val emitted: ListBuffer[(String, A)] = ListBuffer()
   var name: String = null
   var path: String = null
+  
   def emit(kout: K, vout: V) {
     emitted += ((name, f(kout, vout, path)))
     ()

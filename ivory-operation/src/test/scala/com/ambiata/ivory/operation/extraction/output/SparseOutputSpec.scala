@@ -8,6 +8,7 @@ import com.ambiata.ivory.core.arbitraries._
 import com.ambiata.ivory.storage.legacy._
 import com.ambiata.ivory.storage.repository._
 import com.ambiata.ivory.operation.extraction.Snapshots
+import com.ambiata.ivory.operation.extraction.squash._
 import com.ambiata.notion.core._
 
 import org.specs2.matcher.ThrownExpectations
@@ -54,11 +55,13 @@ class SparseOutputSpec extends Specification with SampleFacts with ThrownExpecta
 
   def extractSparse(facts: List[List[Fact]], dictionary: Dictionary, escaping: TextEscaping)(repo: HdfsRepository): RIO[(String, List[String])] = for {
     dir             <- LocalTemporary.random.directory
+    cluster         <- ClusterTemporary().cluster
     conf            <- IvoryConfigurationTemporary.random.conf
     _               <- RepositoryBuilder.createRepo(repo, dictionary, facts)
     eav             = dir </> DirPath.unsafe("eav")
-    s               <- Snapshots.takeSnapshot(repo, IvoryFlags.default, Date.maxValue)
-    input           = ShadowOutputDataset.fromIvoryLocation(repo.toIvoryLocation(Repository.snapshot(s.id)))
+    snapshot        <- Snapshots.takeSnapshot(repo, IvoryFlags.default, Date.maxValue)
+    squash          <- SquashJob.squashFromSnapshotWith(repo, snapshot.toMetadata, SquashConfig.testing, cluster)
+    input           = squash._1
     _               <- SparseOutput.extractWithDictionary(repo, input, ShadowOutputDataset(HdfsLocation(eav.path)), dictionary, Delimiter.Psv, "NA", escaping)
     dictLocation    <- IvoryLocation.fromUri((dir </> "eav" </> ".dictionary").path, conf)
     dictionaryLines <- IvoryLocation.readLines(dictLocation)

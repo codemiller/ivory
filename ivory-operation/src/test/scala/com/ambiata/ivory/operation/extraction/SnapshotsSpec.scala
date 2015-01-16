@@ -4,10 +4,8 @@ import org.specs2._, execute.{Failure => SpecsFailure}
 import com.ambiata.mundane.testing.RIOMatcher._
 import com.ambiata.ivory.core._, arbitraries._, Arbitraries._
 
-import com.ambiata.ivory.mr.FactFormats._
 import com.ambiata.ivory.storage.legacy._
 import com.ambiata.ivory.storage.repository.RepositoryBuilder
-import com.nicta.scoobi.Scoobi._
 import org.joda.time.LocalDate
 
 class SnapshotsSpec extends Specification with SampleFacts with ScalaCheck { def is = s2"""
@@ -22,7 +20,7 @@ class SnapshotsSpec extends Specification with SampleFacts with ScalaCheck { def
     RepositoryBuilder.using { repo => for {
       _ <- RepositoryBuilder.createRepo(repo, sampleDictionary, sampleFacts)
       s <- Snapshots.takeSnapshot(repo, IvoryFlags.default, Date.fromLocalDate(LocalDate.now))
-      f  = valueFromSequenceFile[Fact](repo.toIvoryLocation(Repository.snapshot(s.id)).toHdfs).run(repo.scoobiConfiguration)
+      f  = SnapshotLoader.readV2(repo.toIvoryLocation(Repository.snapshot(s.id)).toHdfsPath, repo.scoobiConfiguration)
     } yield f.map(_.featureId).toSet} must beOkValue(
       // FIX: Capture "simple" snapshot logic which handles priority and set/state so we can check the counts
       sampleFacts.flatten.map(_.featureId).toSet
@@ -49,7 +47,7 @@ class SnapshotsSpec extends Specification with SampleFacts with ScalaCheck { def
     RepositoryBuilder.using { repo => for {
         _ <- RepositoryBuilder.createRepo(repo, vdict.vd.dictionary, List(deprioritized, facts ++ oldfacts))
         s <- Snapshots.takeSnapshot(repo, IvoryFlags.default, fact.date)
-        f  = valueFromSequenceFile[Fact](repo.toIvoryLocation(Repository.snapshot(s.id)).toHdfs).run(repo.scoobiConfiguration)
+        f  = SnapshotLoader.readV2(repo.toIvoryLocation(Repository.snapshot(s.id)).toHdfsPath, repo.scoobiConfiguration)
       } yield f
     }.map(_.toSet) must beOkValue((oldfacts.sortBy(_.date).lastOption.toList ++ facts).toSet)
   }).set(minTestsOk = 3)
@@ -81,7 +79,7 @@ class SnapshotsSpec extends Specification with SampleFacts with ScalaCheck { def
     RepositoryBuilder.using { repo => for {
         _ <- RepositoryBuilder.createRepo(repo, dictionary, List(facts ++ outer))
         s <- Snapshots.takeSnapshot(repo, IvoryFlags.default, date)
-        f  = valueFromSequenceFile[Fact](repo.toIvoryLocation(Repository.snapshot(s.id)).toHdfs).run(repo.scoobiConfiguration)
+        f  = SnapshotLoader.readV2(repo.toIvoryLocation(Repository.snapshot(s.id)).toHdfsPath, repo.scoobiConfiguration)
       } yield f
     }.map(_.toSet) must beOkValue((outer.sortBy(f => f.datetime.long).lastOption.toList ++ facts).toSet)
   }).set(minTestsOk = 3)

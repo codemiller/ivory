@@ -26,6 +26,9 @@ case class MrMultiEmitter[K <: Writable, V <: Writable](writer: MultipleOutputs[
   var name: String = null
   var path: String = null
 
+  def close(): Unit =
+    writer.close()
+
   override def emit(kout: K, vout: V): Unit = {
     writer.write(name, kout, vout, path)
   }

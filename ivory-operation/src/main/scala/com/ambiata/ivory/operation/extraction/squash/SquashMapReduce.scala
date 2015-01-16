@@ -81,14 +81,14 @@ class SquashV2Mapper extends SquashMapper[IntWritable] {
   }
 }
 
-/** TODO Fix to be compatible with V2 format also */
-class SquashMapperFilter extends SquashV1Mapper {
+/** TODO Fix to be compatible with V1 format also */
+class SquashMapperFilter extends SquashV2Mapper {
   import SnapshotMapper._
 
   var entities: Set[String] = null
   var features: Set[String] = null
 
-  override def setup(context: MapperContext[NullWritable]): Unit = {
+  override def setup(context: MapperContext[IntWritable]): Unit = {
     super.setup(context)
     val ctx = MrContext.fromConfiguration(context.getConfiguration)
     val filter = new EntityFilterLookup

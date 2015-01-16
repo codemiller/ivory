@@ -39,7 +39,7 @@ object SquashJob {
     snapPath    = ShadowOutputDataset.fromIvoryLocation(hdfsIvoryL).hdfsPath
     paths       = snapshot.format match {
                     case SnapshotFormat.V1 => List(snapPath)
-                    case SnapshotFormat.V2 => snapshot.sized.fold(Crash.error(Crash.Invariant, "Snapshot format v2 should have namespaces, but none provided!"),
+                    case SnapshotFormat.V2 => snapshot.sized.fold(_ => Crash.error(Crash.Invariant, "Snapshot format v2 should have namespaces, but none provided!"),
                                                                   _.map(s => new Path(snapPath, s.value.name)))
                   }
     job        <- SquashJob.initSnapshotJob(cluster.hdfsConfiguration, snapmeta.date, snapshot.format, paths)

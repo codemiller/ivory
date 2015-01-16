@@ -83,7 +83,7 @@ object SnapshotJob {
     // commit files to factset
     for {
       _ <- Committer.commit(ctx, {
-        case Keys.Out => output
+        case "snapshot" => output
       }, true).run(repository.configuration)
       now <- RIO.fromIO(DateTime.now)
     } yield {
@@ -388,6 +388,9 @@ class SnapshotReducer extends Reducer[BytesWritable, BytesWritable, IntWritable,
     emitter = MrMultiEmitter(new MultipleOutputs(context))
   }
 
+  override def cleanup(context: ReducerContext): Unit =
+    emitter.close()
+
   override def reduce(key: BytesWritable, iter: JIterable[BytesWritable], context: ReducerContext): Unit = {
     val feature = SnapshotWritable.GroupingEntityFeatureId.getFeatureId(key)
     val windowStart = Date.unsafeFromInt(windowLookup(feature))
@@ -432,7 +435,7 @@ object SnapshotReducer {
         kout.set(fact.date.int)
         mutator.mutate(fact.toThrift, vout)
         // emit to namespaced subdirs
-        emitter.path = fact.namespace.name
+        emitter.path = "snapshot" + "/" + fact.namespace.name + "/part"
       }
     }
     // _Always_ emit the last fact, which will be within the window, or the last fact
