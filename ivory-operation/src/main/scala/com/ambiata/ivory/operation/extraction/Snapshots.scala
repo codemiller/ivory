@@ -60,8 +60,8 @@ object Snapshots {
     manifest  = SnapshotManifest.createLatest(commit.id, id, date)
     _        <- SnapshotManifest.io(repository, id).write(manifest)
     _        <- SnapshotStats.save(repository, id, stats)
-    bytes    <- SnapshotStorage.sizeNamespaces(repository, id).map(_.right)
-  } yield Snapshot(id, date, commit.store, commit.dictionary.some, bytes, manifest.format)
+    bytes    <- SnapshotStorage.sizeNamespaces(repository, id)
+  } yield Snapshot(id, date, commit.store, commit.dictionary.some, SnapshotInfoV2(bytes))
 
   def planner(repository: Repository, flags: IvoryFlags, commit: Commit, ids: List[SnapshotId], date: Date): RIO[SnapshotPlan] = {
     val source = SnapshotStorage.source(repository)

@@ -27,7 +27,7 @@ sealed trait Dataset {
     fold(_.partitions.isEmpty, _ => false)
 
   def bytes: Bytes =
-    fold(_.bytes, _.bytes)
+    fold(_.bytes, _.info.totalBytes)
 }
 
 case class FactsetDataset(factset: Factset) extends Dataset

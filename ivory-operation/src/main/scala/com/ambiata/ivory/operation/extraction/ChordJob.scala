@@ -54,7 +54,7 @@ object ChordJob {
     job.setOutputValueClass(classOf[BytesWritable])
 
     // input
-    val incrementalMapper = plan.snapshot.map(_.format match {
+    val incrementalMapper = plan.snapshot.map(_.info.format match {
       case SnapshotFormat.V1 => classOf[ChordV1IncrementalMapper]
       case SnapshotFormat.V2 => classOf[ChordV2IncrementalMapper]
     }).getOrElse(classOf[ChordV1IncrementalMapper])

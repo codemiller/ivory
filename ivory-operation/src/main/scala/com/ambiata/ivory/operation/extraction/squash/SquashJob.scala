@@ -35,14 +35,8 @@ object SquashJob {
     commit     <- CommitStorage.byIdOrFail(repository, commitId)
     dictionary =  commit.dictionary.value
     snapshot   <- SnapshotStorage.byIdOrFail(repository, snapmeta.id)
-    hdfsIvoryL <- repository.toIvoryLocation(Repository.snapshot(snapmeta.id)).asHdfsIvoryLocation
-    snapPath    = ShadowOutputDataset.fromIvoryLocation(hdfsIvoryL).hdfsPath
-    paths       = snapshot.format match {
-                    case SnapshotFormat.V1 => List(snapPath)
-                    case SnapshotFormat.V2 => snapshot.sized.fold(_ => Crash.error(Crash.Invariant, "Snapshot format v2 should have namespaces, but none provided!"),
-                                                                  _.map(s => new Path(snapPath, s.value.name)))
-                  }
-    job        <- SquashJob.initSnapshotJob(cluster.hdfsConfiguration, snapmeta.date, snapshot.format, paths)
+    paths      <- snapshot.location.traverse(k => repository.toIvoryLocation(k).asHdfsIvoryLocation.map(_.toHdfsPath))
+    job        <- SquashJob.initSnapshotJob(cluster.hdfsConfiguration, snapmeta.date, snapshot.info.format, paths)
     result     <- squash(repository, dictionary, paths, conf, job, cluster)
     _          <- SnapshotExtractManifest.io(cluster.toIvoryLocation(result.location)).write(SnapshotExtractManifest.create(commitId, snapmeta.id))
   } yield result -> dictionary

@@ -50,7 +50,7 @@ object SnapshotJob {
     job.setOutputValueClass(classOf[BytesWritable])
 
     // input
-    val incrementalMapper = plan.snapshot.map(_.format match {
+    val incrementalMapper = plan.snapshot.map(_.info.format match {
       case SnapshotFormat.V1 => classOf[SnapshotV1IncrementalMapper]
       case SnapshotFormat.V2 => classOf[SnapshotV2IncrementalMapper]
     }).getOrElse(classOf[SnapshotV1IncrementalMapper])

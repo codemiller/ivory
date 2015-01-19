@@ -133,14 +133,14 @@ Invariants 1 - Things that always hold true for SnapshotPlan
         countSnapshots(plan.datasets) ==== 1 })
 
     def exactDataset =
-      prop((scenario: RepositoryScenario, id: SnapshotId, format: SnapshotFormatSize) => {
-        val snapshot = Snapshot(id, scenario.at, scenario.commit.store, scenario.commit.dictionary.some, format.bytes, format.format)
+      prop((scenario: RepositoryScenario, id: SnapshotId, info: SnapshotInfo) => {
+        val snapshot = Snapshot(id, scenario.at, scenario.commit.store, scenario.commit.dictionary.some, info)
         val plan = SnapshotPlan.inmemory(scenario.at, scenario.commit, List(snapshot))
         plan.datasets ==== Datasets(List(Prioritized(Priority.Max, SnapshotDataset(snapshot)))) })
 
     def exact =
-      prop((scenario: RepositoryScenario, id: SnapshotId, format: SnapshotFormatSize) => {
-        val snapshot = Snapshot(id, scenario.at, scenario.commit.store, scenario.commit.dictionary.some, format.bytes, format.format)
+      prop((scenario: RepositoryScenario, id: SnapshotId, info: SnapshotInfo) => {
+        val snapshot = Snapshot(id, scenario.at, scenario.commit.store, scenario.commit.dictionary.some, info)
         val plan = SnapshotPlan.inmemory(scenario.at, scenario.commit, List(snapshot))
         plan.exact.exists(_ === snapshot) })
 

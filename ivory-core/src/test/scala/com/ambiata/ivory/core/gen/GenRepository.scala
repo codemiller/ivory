@@ -76,16 +76,16 @@ object GenRepository {
     x <- GenDate.date
     s <- store
     d <- GenDictionary.identified
-    f <- snapshotFormatSize
-  } yield Snapshot(i, x, s, d.some, f._2, f._1)
+    f <- snapshotInfo
+  } yield Snapshot(i, x, s, d.some, f)
 
-  def snapshotFormatSize: Gen[(SnapshotFormat, Bytes \/ List[Sized[Namespace]])] = for {
+  def snapshotInfo: Gen[SnapshotInfo] = for {
     f <- GenVersion.snapshot
-    b <- f match {
-           case SnapshotFormat.V1 => bytes.map(_.left)
-           case SnapshotFormat.V2 => namespaceBytes.map(_.right)
+    i <- f match {
+           case SnapshotFormat.V1 => bytes.map(SnapshotInfoV1.apply)
+           case SnapshotFormat.V2 => namespaceBytes.map(SnapshotInfoV2.apply)
          }
-  } yield (f, b)
+  } yield i
 
   def partition: Gen[Partition] = for {
     n <- GenString.namespace

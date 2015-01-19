@@ -6,6 +6,7 @@ import com.ambiata.ivory.core._
 import com.ambiata.ivory.core.thrift._
 import com.ambiata.ivory.mr.MrContextIvory
 import com.ambiata.ivory.storage.fact._
+import com.ambiata.ivory.storage.metadata._
 import com.ambiata.ivory.storage.repository.HdfsGlobs.FactsetPartitionsGlob
 import com.ambiata.poacher.mr._
 
@@ -19,6 +20,8 @@ import org.apache.hadoop.mapreduce.lib.input.MultipleInputs
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat
 
+import scalaz._, Scalaz._
+
 object DumpFactsJob {
   def run(
     repository: HdfsRepository
@@ -29,8 +32,9 @@ object DumpFactsJob {
   ): RIO[Unit] = for {
     job <- RIO.io { Job.getInstance(repository.configuration) }
     ctx <- RIO.io { MrContextIvory.newContext("ivory-dump-facts", job) }
+    ss  <- request.snapshots.traverse(id => SnapshotStorage.byIdOrFail(repository, id))
     r   <- RIO.io {
-        job.setJarByClass(classOf[DumpFactsSnapshotMapper])
+        job.setJarByClass(classOf[DumpFactsSnapshotMapper[_]])
         job.setJobName(ctx.id.value)
         job.setMapOutputKeyClass(classOf[NullWritable])
         job.setMapOutputValueClass(classOf[Text])
@@ -40,9 +44,13 @@ object DumpFactsJob {
           val path = new Path(base, FactsetPartitionsGlob)
           MultipleInputs.addInputPath(job, path, classOf[SequenceFileInputFormat[_, _]], classOf[DumpFactsFactsetMapper])
         })
-        request.snapshots.foreach(id => {
-          val path = repository.toIvoryLocation(Repository.snapshot(id)).toHdfsPath
-          MultipleInputs.addInputPath(job, path, classOf[SequenceFileInputFormat[_, _]], classOf[DumpFactsSnapshotMapper])
+        ss.foreach(snapshot => {
+          val paths = snapshot.location.map(k => repository.toIvoryLocation(k).toHdfsPath)
+          val mapperClass = snapshot.info.format match {
+            case SnapshotFormat.V1 => classOf[DumpFactsSnapshotV1Mapper]
+            case SnapshotFormat.V2 => classOf[DumpFactsSnapshotV2Mapper]
+          }
+          paths.foreach(p => MultipleInputs.addInputPath(job, p, classOf[SequenceFileInputFormat[_, _]], mapperClass))
         })
         val tmpout = new Path(ctx.output, "dump-facts")
         job.setOutputFormatClass(classOf[TextOutputFormat[_, _]])
@@ -75,16 +83,15 @@ object DumpFactsJob {
   }
 }
 
-class DumpFactsSnapshotMapper extends Mapper[NullWritable, BytesWritable, NullWritable, Text] {
+abstract class DumpFactsSnapshotMapper[K <: Writable] extends Mapper[K, BytesWritable, NullWritable, Text] {
   val serializer = ThriftSerialiser()
   val buffer = new StringBuilder(4096)
-  val fact = new NamespacedThriftFact with NamespacedThriftFactDerived
   val key = NullWritable.get
   val out = new Text
   val missing = "NA"
 
   var mapper: DumpFactsMapper = null
-  override def setup(context: Mapper[NullWritable, BytesWritable, NullWritable, Text]#Context): Unit = {
+  override def setup(context: Mapper[K, BytesWritable, NullWritable, Text]#Context): Unit = {
     val path = MrContext.getSplitPath(context.getInputSplit)
     val id = SnapshotId.parse(FilePath.unsafe(path.toString).dirname.components.last).getOrElse(Crash.error(Crash.DataIntegrity, s"Can not parse snapshot id from path: ${path}"))
     val source = s"Snapshot[${id.render}]"
@@ -93,12 +100,39 @@ class DumpFactsSnapshotMapper extends Mapper[NullWritable, BytesWritable, NullWr
     mapper = DumpFactsMapper(entities, attributes, source)
   }
 
-  override def map(key: NullWritable, value: BytesWritable, context: Mapper[NullWritable, BytesWritable, NullWritable, Text]#Context): Unit = {
-    serializer.fromBytesViewUnsafe(fact, value.getBytes, 0, value.getLength)
+  def write(fact: Fact, context: Mapper[K, BytesWritable, NullWritable, Text]#Context): Unit = {
     if (mapper.accept(fact)) {
       out.set(mapper.renderWith(fact, buffer))
       context.write(key, out)
     }
+  }
+}
+
+class DumpFactsSnapshotV1Mapper extends DumpFactsSnapshotMapper[NullWritable] {
+  val fact = new NamespacedThriftFact with NamespacedThriftFactDerived
+  override def map(key: NullWritable, value: BytesWritable, context: Mapper[NullWritable, BytesWritable, NullWritable, Text]#Context): Unit = {
+    serializer.fromBytesViewUnsafe(fact, value.getBytes, 0, value.getLength)
+    write(fact, context)
+  }
+}
+
+class DumpFactsSnapshotV2Mapper extends DumpFactsSnapshotMapper[IntWritable] {
+  val tfact = new ThriftFact
+  var namespace: String = null
+
+  override def setup(context: Mapper[IntWritable, BytesWritable, NullWritable, Text]#Context): Unit = {
+    super.setup(context)
+    namespace = Namespace.nameFromStringDisjunction(MrContext.getSplitPath(context.getInputSplit).getParent.getName) match {
+      case scalaz.\/-(n) => n.name
+      case scalaz.-\/(e) => Crash.error(Crash.DataIntegrity, s"Can not parse snapshot namespace from path ${e}")
+    }
+  }
+
+  override def map(key: IntWritable, value: BytesWritable, context: Mapper[IntWritable, BytesWritable, NullWritable, Text]#Context): Unit = {
+    serializer.fromBytesViewUnsafe(tfact, value.getBytes, 0, value.getLength)
+    val date = Date.unsafeFromInt(key.get)
+    val fact = FatThriftFact(namespace, date, tfact)
+    write(fact, context)
   }
 }
 

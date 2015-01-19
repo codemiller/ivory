@@ -9,8 +9,6 @@ import org.apache.hadoop.mapreduce._
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat
 
-import scalaz._
-
 object IvoryInputs {
   def configure(
     context: MrContext
@@ -32,16 +30,7 @@ object IvoryInputs {
       case FactsetDataset(factset) =>
         Nil
       case SnapshotDataset(snapshot) =>
-        val path: Path = repository.toIvoryLocation(Repository.snapshot(snapshot.id)).toHdfsPath
-        snapshot.format match {
-          case SnapshotFormat.V1 =>
-            List(path)
-          case SnapshotFormat.V2 =>
-            snapshot.sized match {
-              case -\/(_)  => Crash.error(Crash.Invariant, "Snapshot format v2 should have namespaces, but none provided!")
-              case \/-(ss) => ss.map(s => new Path(path, s.value.name))
-          }
-        }
+        snapshot.location.map(k => repository.toIvoryLocation(k).toHdfsPath)
     }))
     ProxyInputFormat.configure(context, job, List(factsets, snapshots))
   }

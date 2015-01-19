@@ -32,9 +32,11 @@ object SquashDumpJob {
 
     // HDFS below here
     hr         <- repository.asHdfsRepository
-    snapPath    = hr.toIvoryLocation(Repository.snapshot(snapshotId)).toHdfsPath
-    paths       = snapshot.sized.fold(_ => Crash.error(Crash.Invariant, "Expecting snapshot format v2"),
-                                      _.map(s => new Path(snapPath, s.value.name)))
+    _          <- snapshot.info.format match {
+                    case SnapshotFormat.V1 => RIO.fail("Can not currently run squash dump on snapshot v1")
+                    case SnapshotFormat.V2 => RIO.ok(())
+                  }
+    paths       = snapshot.location.map(k => hr.toIvoryLocation(k).toHdfsPath)
     job        <- initDumpJob(hr.configuration, snapshot.date, paths, filteredDct, lookup)
     out        <- output.asHdfsIvoryLocation
     _          <- SquashJob.run(job._1, job._2, reducers, filteredDct, out.toHdfsPath, hr.codec, SquashConfig.default, latest = false)
