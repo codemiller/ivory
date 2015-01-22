@@ -112,23 +112,23 @@ object RepositoryScenario {
         format    <- arbitrary[FactsetFormat]
         bytes     <- arbitrary[Bytes]
         sformat   <- arbitrary[SnapshotFormat]
-        info      <- sformat match {
-                       case SnapshotFormat.V1 => arbitrary[Bytes].map(SnapshotInfoV1.apply)
-                       case SnapshotFormat.V2 => arbitrary[List[Sized[Namespace]]].map(SnapshotInfoV2.apply)
+        sbytes    <- sformat match {
+                       case SnapshotFormat.V1 => arbitrary[Bytes].map(_.left)
+                       case SnapshotFormat.V2 => arbitrary[List[Sized[Namespace]]].map(_.right)
                      }
         today     =  addDays(acc.epoch, day)
         // just do 1 day chunks, makes debugging significantly easier, and doesn't really help
         // coverage to do wider spans.
         store     =  nextStore(acc.commit.store, names, today, earliest, latest, format, bytes, 1)
-        snapshots =  nextSnapshots(store, acc.snapshots, today, dictionary, chance, info)
+        snapshots =  nextSnapshots(store, acc.snapshots, today, dictionary, chance, sbytes, sformat)
         commit    = Commit(acc.commit.id.next.get, dictionary, store, acc.commit.config)
         } yield RepositoryScenario(commit <:: acc.commits, snapshots, acc.epoch, acc.at, acc.entities))
       } yield r)
 
-  def nextSnapshots(store: FeatureStore, snapshots: List[Snapshot], today: Date, dictionary: Identified[DictionaryId, Dictionary], create: Boolean, info: SnapshotInfo) = {
+  def nextSnapshots(store: FeatureStore, snapshots: List[Snapshot], today: Date, dictionary: Identified[DictionaryId, Dictionary], create: Boolean, bytes: Bytes \/ List[Sized[Namespace]], format: SnapshotFormat) = {
     val current = if (snapshots.isEmpty) SnapshotId.initial.some else snapshots.map(_.id).maximum
     val next = current.flatMap(_.next)
-    snapshots ++ next.map(id => Snapshot(id, today, store, dictionary.some, info)).filter(_ => create).toList
+    snapshots ++ next.map(id => Snapshot(id, today, store, dictionary.some, bytes, format)).filter(_ => create).toList
   }
 
   def nextStore(store: FeatureStore, names: List[Namespace], today: Date, earliest: Int, latest: Int, format: FactsetFormat, bytes: Bytes, chunk: Int): FeatureStore = (for {

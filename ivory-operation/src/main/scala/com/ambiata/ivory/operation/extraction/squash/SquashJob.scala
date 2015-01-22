@@ -3,7 +3,7 @@ package com.ambiata.ivory.operation.extraction.squash
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.lookup.{FeatureIdLookup, FeatureReduction, FeatureReductionLookup}
 import com.ambiata.ivory.mr.MrContextIvory
-import com.ambiata.ivory.operation.extraction.{ChordJob, Snapshots, SnapshotJob}
+import com.ambiata.ivory.operation.extraction.{ChordJob, Snapshots, SnapshotJob, IvoryInputs}
 import com.ambiata.ivory.storage.entities._
 import com.ambiata.ivory.storage.lookup.{FeatureLookups, ReducerLookups, ReducerSize, WindowLookup}
 import com.ambiata.ivory.storage.manifest.{SnapshotExtractManifest, SnapshotManifest}
@@ -35,8 +35,8 @@ object SquashJob {
     commit     <- CommitStorage.byIdOrFail(repository, commitId)
     dictionary =  commit.dictionary.value
     snapshot   <- SnapshotStorage.byIdOrFail(repository, snapmeta.id)
-    paths      <- snapshot.location.traverse(k => repository.toIvoryLocation(k).asHdfsIvoryLocation.map(_.toHdfsPath))
-    job        <- SquashJob.initSnapshotJob(cluster.hdfsConfiguration, snapmeta.date, snapshot.info.format, paths)
+    paths      <- IvoryInputs.snapshotKeys(snapshot).traverse(k => repository.toIvoryLocation(k).asHdfsIvoryLocation.map(_.toHdfsPath))
+    job        <- SquashJob.initSnapshotJob(cluster.hdfsConfiguration, snapmeta.date, snapshot.format, paths)
     result     <- squash(repository, dictionary, paths, conf, job, cluster)
     _          <- SnapshotExtractManifest.io(cluster.toIvoryLocation(result.location)).write(SnapshotExtractManifest.create(commitId, snapmeta.id))
   } yield result -> dictionary

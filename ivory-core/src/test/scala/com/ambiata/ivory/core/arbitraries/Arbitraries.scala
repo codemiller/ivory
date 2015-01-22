@@ -146,9 +146,6 @@ trait Arbitraries {
   implicit def SnapshotFormatArbitrary: Arbitrary[SnapshotFormat] =
     Arbitrary(GenVersion.snapshot)
 
-  implicit def SnapshotInfoArbitrary: Arbitrary[SnapshotInfo] =
-    Arbitrary(GenRepository.snapshotInfo)
-
   implicit def SnapshotIdArbitrary: Arbitrary[SnapshotId] =
     Arbitrary(GenIdentifier.snapshot)
 

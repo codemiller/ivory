@@ -10,6 +10,7 @@ import com.ambiata.ivory.operation.extraction.reduction.Reduction
 import com.ambiata.ivory.operation.extraction.{ChordJob, SnapshotJob, SnapshotMapper}
 import com.ambiata.ivory.storage.lookup.FeatureLookups
 import com.ambiata.ivory.storage.entities._
+import com.ambiata.ivory.storage.fact._
 import com.ambiata.poacher.mr._
 import org.apache.hadoop.io.{BytesWritable, NullWritable, IntWritable, Text, Writable}
 import org.apache.hadoop.mapreduce.{Mapper, Reducer}
@@ -20,15 +21,27 @@ abstract class SquashMapper[K <: Writable] extends Mapper[K, BytesWritable, Byte
   import SnapshotMapper._
 
   val serializer = ThriftSerialiser()
+  val fact: MutableFact = createMutableFact
   val kout = Writables.bytesWritable(4096)
   val vout = Writables.bytesWritable(4096)
   val lookup = new FeatureIdLookup
 
   val emitter: MrEmitter[K, BytesWritable, BytesWritable, BytesWritable] = MrEmitter()
 
+  var converter: MrFactConverter[K, BytesWritable] = null
+
   override def setup(context: MapperContext[K]): Unit = {
     val ctx = MrContext.fromConfiguration(context.getConfiguration)
     ctx.thriftCache.pop(context.getConfiguration, SnapshotJob.Keys.FeatureIdLookup, lookup)
+  }
+
+  override def map(key: K, value: BytesWritable, context: MapperContext[K]): Unit = {
+    emitter.context = context
+    converter.convert(fact, key, value, serializer)
+
+    val bytes = serializer.toBytes(fact)
+    vout.set(bytes, 0, bytes.length)
+    write(fact, vout)
   }
 
   def write(fact: Fact, value: BytesWritable): Unit = {
@@ -36,8 +49,7 @@ abstract class SquashMapper[K <: Writable] extends Mapper[K, BytesWritable, Byte
     val featureId = lookup.getIds.get(featureIdString)
     if (featureId != null) {
       SquashWritable.KeyState.set(fact, kout, featureId)
-      vout.set(value.getBytes, 0, value.getLength)
-      emitter.emit(kout, vout)
+      emitter.emit(kout, value)
     }
   }
 }
@@ -45,39 +57,18 @@ abstract class SquashMapper[K <: Writable] extends Mapper[K, BytesWritable, Byte
 class SquashV1Mapper extends SquashMapper[NullWritable] {
   import SnapshotMapper._
 
-  val fact = new NamespacedThriftFact with NamespacedThriftFactDerived
-
-  override def map(key: NullWritable, value: BytesWritable, context: MapperContext[NullWritable]): Unit = {
-    emitter.context = context
-    serializer.fromBytesViewUnsafe(fact, value.getBytes, 0, value.getLength)
-    write(fact, value)
+  override def setup(context: MapperContext[NullWritable]): Unit = {
+    super.setup(context)
+    converter = MutableFactConverter()
   }
 }
 
 class SquashV2Mapper extends SquashMapper[IntWritable] {
   import SnapshotMapper._
 
-  val tfact = new ThriftFact
-  var namespace: String = null
-
   override def setup(context: MapperContext[IntWritable]): Unit = {
     super.setup(context)
-    namespace = Namespace.nameFromStringDisjunction(MrContext.getSplitPath(context.getInputSplit).getParent.getName) match {
-      case scalaz.\/-(n) => n.name
-      case scalaz.-\/(e) => Crash.error(Crash.DataIntegrity, s"Can not parse snapshot namespace from path ${e}")
-    }
-  }
-
-  override def map(key: IntWritable, value: BytesWritable, context: MapperContext[IntWritable]): Unit = {
-    emitter.context = context
-    serializer.fromBytesViewUnsafe(tfact, value.getBytes, 0, value.getLength)
-    val date = Date.unsafeFromInt(key.get)
-    val fact = FatThriftFact(namespace, date, tfact)
-    val bytes = serializer.toBytes(fact)
-
-    // WARNING reusing input value BytesWritable
-    value.set(bytes, 0, bytes.length)
-    write(fact, value)
+    converter = NamespaceDateFactConverter(Namespaces.fromSnapshotMr(context.getInputSplit))
   }
 }
 

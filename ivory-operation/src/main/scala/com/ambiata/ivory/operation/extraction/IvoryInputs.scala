@@ -4,10 +4,13 @@ import com.ambiata.ivory.core._
 import com.ambiata.ivory.storage.partition._
 import com.ambiata.ivory.mr._
 import com.ambiata.poacher.mr._
+import com.ambiata.notion.core.Key
 
 import org.apache.hadoop.mapreduce._
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat
+
+import scalaz._, Scalaz._
 
 object IvoryInputs {
   def configure(
@@ -15,24 +18,47 @@ object IvoryInputs {
   , job: Job
   , repository: HdfsRepository
   , datasets: Datasets
-  , factset: Class[_ <: CombinableMapper[_, _, _, _]]
-  , snapshot: Class[_ <: CombinableMapper[_, _, _, _]]
+  , factsetMapper: FactsetFormat => Class[_ <: CombinableMapper[_, _, _, _]]
+  , snapshotMapper: SnapshotFormat => Class[_ <: CombinableMapper[_, _, _, _]]
   ): Unit = {
     val summary = datasets.summary
     println(s"""Configuring mapreduce job, with ${summary.partitions} parititons, ${summary.snapshot.map(s => s"and snapshot $s.render, ").getOrElse("")} totalling ${summary.bytes}""")
-    val factsets = InputSpecification(classOf[SequenceFileInputFormat[_, _]], factset, datasets.sets.flatMap(p => p.value match {
-      case FactsetDataset(factset) =>
-        Partitions.globs(repository, factset.id, factset.partitions.map(_.value)).map(f => new Path(f))
-      case SnapshotDataset(snapshot) =>
-        Nil
-    }))
-    val snapshots = InputSpecification(classOf[SequenceFileInputFormat[_, _]], snapshot, datasets.sets.flatMap(p => p.value match {
-      case FactsetDataset(factset) =>
-        Nil
-      case SnapshotDataset(snapshot) =>
-        snapshot.location.map(k => repository.toIvoryLocation(k).toHdfsPath)
-    }))
-    ProxyInputFormat.configure(context, job, List(factsets, snapshots))
+    val factsets: List[Factset] =
+      datasets.sets.flatMap(p => p.value match {
+        case FactsetDataset(factset)   => factset.some
+        case SnapshotDataset(snapshot) => none[Factset]
+      })
+
+    val factsetSpecifications: List[InputSpecification] =
+      factsets.groupBy(_.format).toList.map({ case (format, factsets) =>
+        InputSpecification(classOf[SequenceFileInputFormat[_, _]], factsetMapper(format), factsets.flatMap(f => factsetPaths(repository, f)))
+      })
+
+    val snapshots: List[Snapshot] =
+      datasets.sets.flatMap(p => p.value match {
+        case FactsetDataset(factset)   => none[Snapshot]
+        case SnapshotDataset(snapshot) => snapshot.some
+      })
+  
+    val snapshotSpecifications: List[InputSpecification] =
+      snapshots.groupBy(_.format).toList.map({ case (format, snapshots) =>
+        InputSpecification(classOf[SequenceFileInputFormat[_, _]], snapshotMapper(format), snapshots.flatMap(s => snapshotPaths(repository, s)))
+      })
+
+    ProxyInputFormat.configure(context, job, factsetSpecifications ++ snapshotSpecifications)
   }
 
+  def factsetPaths(repository: HdfsRepository, factset: Factset): List[Path] =
+    Partitions.globs(repository, factset.id, factset.partitions.map(_.value)).map(f => new Path(f))
+
+  def snapshotPaths(repository: HdfsRepository, snapshot: Snapshot): List[Path] =
+    snapshotKeys(snapshot).map(k => repository.toIvoryLocation(k).toHdfsPath)
+
+  def snapshotKeys(snapshot: Snapshot): List[Key] = {
+    val base: Key = Repository.snapshot(snapshot.id)
+    snapshot.bytes match {
+      case -\/(_)  => List(base)
+      case \/-(bs) => bs.map(s => base / s.value.asKeyName)
+    }
+  }
 }

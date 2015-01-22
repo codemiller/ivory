@@ -4,6 +4,7 @@ import com.ambiata.ivory.core._
 import com.ambiata.ivory.operation.debug._
 import com.ambiata.ivory.cli._, ScoptReaders._
 import com.ambiata.ivory.storage.control._
+import com.ambiata.mundane.control.RIO
 import org.apache.hadoop.fs.Path
 import scalaz.effect.IO
 
@@ -36,6 +37,7 @@ object dumpFacts extends IvoryApp {
 
   val cmd = IvoryCmd.withRepo[CliArguments](parser, CliArguments(Nil, Nil, Nil, Nil, "not-set"), { repository => conf => flags => c => IvoryT.fromRIO { for {
     output <- IvoryLocation.fromUri(c.output, conf)
-    _      <- DumpFacts.dump(repository, DumpFactsRequest(c.factsets, c.snapshots, c.entities, c.attributes), output)
+    ret    <- DumpFacts.dump(repository, DumpFactsRequest(c.factsets, c.snapshots, c.entities, c.attributes), output)
+    _      <- RIO.fromDisjunctionString(ret)
   } yield Nil } })
 }

@@ -3,26 +3,19 @@ package com.ambiata.ivory.core
 import org.specs2._
 import com.ambiata.ivory.core.arbitraries.Arbitraries._
 
+import scalaz._, scalacheck.ScalazArbitrary._
+
 class SnapshotSpec extends Specification with ScalaCheck { def is = s2"""
 
-Snapshot
---------
-
-  Can create SnapshotMetadata from Snapshot          ${metadata}
-
-SnapshotInfo
+Constructors
 ------------
 
-  Can get location keys from snapshot                ${location}
+  This doesn't really test anything, but I am leaving it here so that it
+  is more likely for someone to add specs if they add a combinator:
+
+    ${ prop((id: SnapshotId, date: Date, store: FeatureStore, dictionary: Option[Identified[DictionaryId, Dictionary]], bytes: Bytes \/ List[Sized[Namespace]], format: SnapshotFormat) => {
+         val s = Snapshot(id, date, store, dictionary, bytes, format)
+         (s.id, s.date, s.store, s.dictionary, s.bytes, s.format) ==== ((id, date, store, dictionary, bytes, format)) }) }
 
 """
-
-  def metadata = prop((s: Snapshot) =>
-    s.toMetadata ==== SnapshotMetadata(s.id, s.date, s.store.id, s.dictionary.map(_.id)))
-
-  def location = prop((snapshot: Snapshot) =>
-    snapshot.location ==== (snapshot.info match {
-      case SnapshotInfoV1(b)  => List(Repository.snapshot(snapshot.id))
-      case SnapshotInfoV2(bs) => bs.map(Repository.snapshot(snapshot.id) / _.value.asKeyName)
-    }))
 }

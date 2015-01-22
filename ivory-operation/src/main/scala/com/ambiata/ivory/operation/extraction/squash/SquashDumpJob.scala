@@ -3,7 +3,7 @@ package com.ambiata.ivory.operation.extraction.squash
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.lookup.EntityFilterLookup
 import com.ambiata.ivory.mr.MrContextIvory
-import com.ambiata.ivory.operation.extraction.SnapshotJob
+import com.ambiata.ivory.operation.extraction.{IvoryInputs, SnapshotJob}
 import com.ambiata.ivory.storage.lookup.FeatureLookups
 import com.ambiata.ivory.storage.manifest.SnapshotManifest
 import com.ambiata.ivory.storage.metadata.{Metadata, SnapshotStorage}
@@ -32,11 +32,11 @@ object SquashDumpJob {
 
     // HDFS below here
     hr         <- repository.asHdfsRepository
-    _          <- snapshot.info.format match {
+    _          <- snapshot.format match {
                     case SnapshotFormat.V1 => RIO.fail("Can not currently run squash dump on snapshot v1")
                     case SnapshotFormat.V2 => RIO.ok(())
                   }
-    paths       = snapshot.location.map(k => hr.toIvoryLocation(k).toHdfsPath)
+    paths       = IvoryInputs.snapshotKeys(snapshot).map(k => hr.toIvoryLocation(k).toHdfsPath)
     job        <- initDumpJob(hr.configuration, snapshot.date, paths, filteredDct, lookup)
     out        <- output.asHdfsIvoryLocation
     _          <- SquashJob.run(job._1, job._2, reducers, filteredDct, out.toHdfsPath, hr.codec, SquashConfig.default, latest = false)

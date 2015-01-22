@@ -9,9 +9,8 @@ trait Emitter[A, B] {
   def emit(key: A, value: B): Unit
 }
 
-trait MultiEmitter[A, B] extends Emitter[A, B] {
-  var name: String
-  var path: String
+trait MultiEmitter[A, B] {
+  def emit(name: String, key: A, value: B, path: String): Unit
 }
 
 case class MrEmitter[IK <: Writable, IV <: Writable, OK <: Writable, OV <: Writable]() extends Emitter[OK, OV] {
@@ -23,13 +22,10 @@ case class MrEmitter[IK <: Writable, IV <: Writable, OK <: Writable, OV <: Writa
 }
 
 case class MrMultiEmitter[K <: Writable, V <: Writable](writer: MultipleOutputs[K, V]) extends MultiEmitter[K, V] {
-  var name: String = null
-  var path: String = null
-
   def close(): Unit =
     writer.close()
 
-  override def emit(kout: K, vout: V): Unit = {
+  override def emit(name: String, kout: K, vout: V, path: String): Unit = {
     writer.write(name, kout, vout, path)
   }
 }

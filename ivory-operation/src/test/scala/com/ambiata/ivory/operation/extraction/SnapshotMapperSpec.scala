@@ -9,7 +9,7 @@ import com.ambiata.ivory.mr._
 import com.ambiata.ivory.storage.fact._
 import com.ambiata.poacher.mr._
 
-import org.apache.hadoop.io.{BytesWritable, IntWritable}
+import org.apache.hadoop.io.{BytesWritable, IntWritable, NullWritable}
 import org.specs2._
 import org.specs2.matcher.ThrownExpectations
 
@@ -21,8 +21,7 @@ SnapshotMapperSpec
 -----------
 
   SnapshotFactsetThriftMapper has correct key/value and count     $factset
-  SnapshotV1IncrementalMapper has correct key/value and count     $incremental1
-  SnapshotV2IncrementalMapper has correct key/value and count     $incremental2
+  SnapshotV1IncrementalMapper has correct key/value and count     $incremental
 
 """
   def disjoint(a: List[Fact], b: List[Fact]): Boolean =
@@ -32,7 +31,7 @@ SnapshotMapperSpec
     val serializer = ThriftSerialiser()
     val kout = Writables.bytesWritable(4096)
     val vout = Writables.bytesWritable(4096)
-    val tfact = new ThriftFact
+    val fact: MutableFact = createMutableFact
     val emitter = TestEmitter()
     val okCounter = MemoryCounter()
     val skipCounter = MemoryCounter()
@@ -44,11 +43,11 @@ SnapshotMapperSpec
     (fs ++ dropped).foreach(f => {
       val partition = Partition(f.namespace, f.date)
       val converter = version match {
-        case FactsetFormat.V1 => VersionOneFactConverter(partition)
-        case FactsetFormat.V2 => VersionTwoFactConverter(partition)
+        case FactsetFormat.V1 => PartitionFactConverter(partition)
+        case FactsetFormat.V2 => PartitionFactConverter(partition)
       }
       val bytes = serializer.toBytes(f.toThrift)
-      SnapshotFactsetMapper.map(tfact, date, converter, new BytesWritable(bytes), priority, kout, vout, emitter,
+      SnapshotFactsetMapper.map(fact, date, converter, NullWritable.get, new BytesWritable(bytes), priority, kout, vout, emitter,
         okCounter, skipCounter, dropCounter, serializer, lookup)
     })
 
@@ -57,11 +56,11 @@ SnapshotMapperSpec
     assertMapperOutput(emitter, okCounter, skipCounter, dropCounter, expected, fs.length - expected.length, dropped.length, priority, serializer)
   })
 
-  def incremental1 = prop((fs: List[Fact], dropped: List[Fact]) => disjoint(fs, dropped) ==> {
+  def incremental = prop((fs: List[Fact], dropped: List[Fact], format: SnapshotFormat) => disjoint(fs, dropped) ==> {
     val serializer = ThriftSerialiser()
     val kout = Writables.bytesWritable(4096)
     val vout = Writables.bytesWritable(4096)
-    val empty = new NamespacedThriftFact with NamespacedThriftFactDerived
+    val empty: MutableFact = createMutableFact
     val emitter = TestEmitter()
     val okCounter = MemoryCounter()
     val dropCounter = MemoryCounter()
@@ -69,32 +68,13 @@ SnapshotMapperSpec
     fs.foreach(f => lookup.putToIds(f.featureId.toString, f.featureId.hashCode))
 
     // Run mapper
-    (fs ++ dropped).foreach(f => {
-      val bytes = serializer.toBytes(f.toNamespacedThrift)
-      SnapshotIncrementalMapper.mapV1(empty, new BytesWritable(bytes), Priority.Max, kout, vout,
-                                      emitter, okCounter, dropCounter, serializer, lookup)
-    })
-
-    assertMapperOutput(emitter, okCounter, MemoryCounter(), dropCounter, fs, 0, dropped.length, Priority.Max, serializer)
-  })
-
-  def incremental2 = prop((fs: List[Fact], dropped: List[Fact]) => disjoint(fs, dropped) ==> {
-    val serializer = ThriftSerialiser()
-    val kout = Writables.bytesWritable(4096)
-    val vout = Writables.bytesWritable(4096)
-    val empty = new ThriftFact
-    val emitter = TestEmitter()
-    val okCounter = MemoryCounter()
-    val dropCounter = MemoryCounter()
-    val lookup = new FeatureIdLookup(new java.util.HashMap[String, Integer])
-    fs.foreach(f => lookup.putToIds(f.featureId.toString, f.featureId.hashCode))
-
-    // Run mapper
-    (fs ++ dropped).foreach(f => {
-      val key = new IntWritable(f.date.int)
-      val value = new BytesWritable(serializer.toBytes(f.toThrift))
-      SnapshotIncrementalMapper.mapV2(empty, key, value, Priority.Max, kout, vout,
-                                      emitter, okCounter, dropCounter, serializer, lookup, f.namespace.name)
+    (fs ++ dropped).foreach(f => format match {
+      case SnapshotFormat.V1 =>
+        SnapshotIncrementalMapper.map(empty, NullWritable.get, new BytesWritable(serializer.toBytes(f.toNamespacedThrift)),
+                                      Priority.Max, kout, vout, emitter, okCounter, dropCounter, serializer, lookup, MutableFactConverter())
+      case SnapshotFormat.V2 =>
+        SnapshotIncrementalMapper.map(empty, new IntWritable(f.date.int), new BytesWritable(serializer.toBytes(f.toThrift)),
+                                      Priority.Max, kout, vout, emitter, okCounter, dropCounter, serializer, lookup, NamespaceDateFactConverter(f.namespace))
     })
 
     assertMapperOutput(emitter, okCounter, MemoryCounter(), dropCounter, fs, 0, dropped.length, Priority.Max, serializer)

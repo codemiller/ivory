@@ -3,6 +3,9 @@ package com.ambiata.ivory.operation.debug
 import com.ambiata.mundane.control._
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.storage.metadata._
+import com.ambiata.ivory.storage.fact.Factsets
+
+import scalaz._, Scalaz._
 
 /**
  * Details of a debug-dump-facts request.
@@ -19,10 +22,18 @@ case class DumpFactsRequest(
 )
 
 object DumpFacts {
-  def dump(repository: Repository, request: DumpFactsRequest, location: IvoryLocation): RIO[Unit] = for {
+  def dump(repository: Repository, request: DumpFactsRequest, location: IvoryLocation): RIO[String \/ Unit] = for {
     output     <- location.asHdfsIvoryLocation
     hdfs       <- repository.asHdfsRepository
     dictionary <- Metadata.latestDictionaryFromIvory(repository)
-    _          <- DumpFactsJob.run(hdfs, dictionary, request, output.toHdfsPath, hdfs.root.codec)
-  } yield ()
+    datasets   <- datasets(repository, request)
+    ret        <- datasets.traverse(ds => DumpFactsJob.run(hdfs, dictionary, ds, request.entities, request.attributes, output.toHdfsPath, hdfs.root.codec))
+  } yield ret
+
+  def datasets(repository: Repository, request: DumpFactsRequest): RIO[String \/ Datasets] = for {
+    factsets  <- request.factsets.traverse(fid => Factsets.factset(repository, fid))
+    snapshots <- request.snapshots.traverse(sid => SnapshotStorage.byIdOrFail(repository, sid))
+    pdatasets  = Prioritized.fromList(factsets.map(Dataset.factset) ++ snapshots.map(Dataset.snapshot))
+    datasets   = pdatasets.cata(ds => Datasets(ds).right, "Too many factsets/snapshots!".left)
+  } yield datasets
 }

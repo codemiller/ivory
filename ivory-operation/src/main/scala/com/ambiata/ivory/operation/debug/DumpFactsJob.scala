@@ -4,9 +4,9 @@ import com.ambiata.mundane.control._
 import com.ambiata.mundane.io._
 import com.ambiata.ivory.core._
 import com.ambiata.ivory.core.thrift._
-import com.ambiata.ivory.mr.MrContextIvory
+import com.ambiata.ivory.mr._
+import com.ambiata.ivory.operation.extraction.IvoryInputs
 import com.ambiata.ivory.storage.fact._
-import com.ambiata.ivory.storage.metadata._
 import com.ambiata.ivory.storage.repository.HdfsGlobs.FactsetPartitionsGlob
 import com.ambiata.poacher.mr._
 
@@ -26,32 +26,29 @@ object DumpFactsJob {
   def run(
     repository: HdfsRepository
   , dictionary: Dictionary
-  , request: DumpFactsRequest
+  , datasets: Datasets
+  , entities: List[String]
+  , attributes: List[String]
   , output: Path
   , codec: Option[CompressionCodec]
   ): RIO[Unit] = for {
     job <- RIO.io { Job.getInstance(repository.configuration) }
     ctx <- RIO.io { MrContextIvory.newContext("ivory-dump-facts", job) }
-    ss  <- request.snapshots.traverse(id => SnapshotStorage.byIdOrFail(repository, id))
     r   <- RIO.io {
         job.setJarByClass(classOf[DumpFactsSnapshotMapper[_]])
         job.setJobName(ctx.id.value)
         job.setMapOutputKeyClass(classOf[NullWritable])
         job.setMapOutputValueClass(classOf[Text])
         job.setNumReduceTasks(0)
-        request.factsets.foreach(id => {
-          val base = repository.toIvoryLocation(Repository.factset(id)).toHdfsPath
-          val path = new Path(base, FactsetPartitionsGlob)
-          MultipleInputs.addInputPath(job, path, classOf[SequenceFileInputFormat[_, _]], classOf[DumpFactsFactsetMapper])
+
+        IvoryInputs.configure(ctx, job, repository, datasets, {
+          case FactsetFormat.V1 => classOf[DumpFactsV1FactsetMapper]
+          case FactsetFormat.V2 => classOf[DumpFactsV2FactsetMapper]
+        }, {
+          case SnapshotFormat.V1 => classOf[DumpFactsV1SnapshotMapper]
+          case SnapshotFormat.V2 => classOf[DumpFactsV2SnapshotMapper]
         })
-        ss.foreach(snapshot => {
-          val paths = snapshot.location.map(k => repository.toIvoryLocation(k).toHdfsPath)
-          val mapperClass = snapshot.info.format match {
-            case SnapshotFormat.V1 => classOf[DumpFactsSnapshotV1Mapper]
-            case SnapshotFormat.V2 => classOf[DumpFactsSnapshotV2Mapper]
-          }
-          paths.foreach(p => MultipleInputs.addInputPath(job, p, classOf[SequenceFileInputFormat[_, _]], mapperClass))
-        })
+
         val tmpout = new Path(ctx.output, "dump-facts")
         job.setOutputFormatClass(classOf[TextOutputFormat[_, _]])
         FileOutputFormat.setOutputPath(job, tmpout)
@@ -59,8 +56,8 @@ object DumpFactsJob {
           Compress.intermediate(job, cc)
           Compress.output(job, cc)
         })
-        write(job.getConfiguration, Keys.Entities, request.entities)
-        write(job.getConfiguration, Keys.Attributes, request.attributes)
+        write(job.getConfiguration, Keys.Entities, entities)
+        write(job.getConfiguration, Keys.Attributes, attributes)
 
         job.waitForCompletion(true)
       }
@@ -83,21 +80,71 @@ object DumpFactsJob {
   }
 }
 
-abstract class DumpFactsSnapshotMapper[K <: Writable] extends Mapper[K, BytesWritable, NullWritable, Text] {
+abstract class DumpFactsFactsetMapper[K <: Writable] extends CombinableMapper[K, BytesWritable, NullWritable, Text] {
   val serializer = ThriftSerialiser()
+  val buffer = new StringBuilder(4096)
+  val underlying = new ThriftFact
+  val kout = NullWritable.get
+  val vout = new Text
+  var fact: MutableFact = createMutableFact
+  var mapper: DumpFactsMapper = null
+  var partition: Partition = null
+  var converter: MrFactConverter[K, BytesWritable] = null
+
+  override def setupSplit(context: Mapper[K, BytesWritable, NullWritable, Text]#Context, split: InputSplit): Unit = {
+    val (id, p) = FactsetInfo.getBaseInfo(context.getInputSplit)
+    partition = p
+    val source = s"Factset[${id.render}]"
+    val entities = DumpFactsJob.read(context.getConfiguration, DumpFactsJob.Keys.Entities).toSet
+    val attributes = DumpFactsJob.read(context.getConfiguration, DumpFactsJob.Keys.Attributes).toSet
+    mapper = DumpFactsMapper(entities, attributes, source)
+  }
+
+  override def map(key: K, value: BytesWritable, context: Mapper[K, BytesWritable, NullWritable, Text]#Context): Unit = {
+    converter.convert(fact, key, value, serializer)
+    if (mapper.accept(fact)) {
+      vout.set(mapper.renderWith(fact, buffer))
+      context.write(kout, vout)
+    }
+  }
+}
+
+class DumpFactsV1FactsetMapper extends DumpFactsFactsetMapper[NullWritable] {
+  override def setupSplit(context: Mapper[NullWritable, BytesWritable, NullWritable, Text]#Context, split: InputSplit): Unit = {
+    super.setupSplit(context, split)
+    converter = PartitionFactConverter(partition)
+  }
+}
+
+class DumpFactsV2FactsetMapper extends DumpFactsFactsetMapper[NullWritable] {
+  override def setupSplit(context: Mapper[NullWritable, BytesWritable, NullWritable, Text]#Context, split: InputSplit): Unit = {
+    super.setupSplit(context, split)
+    converter = PartitionFactConverter(partition)
+  }
+}
+
+abstract class DumpFactsSnapshotMapper[K <: Writable] extends CombinableMapper[K, BytesWritable, NullWritable, Text] {
+  val serializer = ThriftSerialiser()
+  val fact: MutableFact = createMutableFact
   val buffer = new StringBuilder(4096)
   val key = NullWritable.get
   val out = new Text
   val missing = "NA"
-
+  var converter: MrFactConverter[K, BytesWritable] = null
   var mapper: DumpFactsMapper = null
-  override def setup(context: Mapper[K, BytesWritable, NullWritable, Text]#Context): Unit = {
+
+  override def setupSplit(context: Mapper[K, BytesWritable, NullWritable, Text]#Context, split: InputSplit): Unit = {
     val path = MrContext.getSplitPath(context.getInputSplit)
     val id = SnapshotId.parse(FilePath.unsafe(path.toString).dirname.components.last).getOrElse(Crash.error(Crash.DataIntegrity, s"Can not parse snapshot id from path: ${path}"))
     val source = s"Snapshot[${id.render}]"
     val entities = DumpFactsJob.read(context.getConfiguration, DumpFactsJob.Keys.Entities).toSet
     val attributes = DumpFactsJob.read(context.getConfiguration, DumpFactsJob.Keys.Attributes).toSet
     mapper = DumpFactsMapper(entities, attributes, source)
+  }
+
+  override def map(key: K, value: BytesWritable, context: Mapper[K, BytesWritable, NullWritable, Text]#Context): Unit = {
+    converter.convert(fact, key, value, serializer)
+    write(fact, context)
   }
 
   def write(fact: Fact, context: Mapper[K, BytesWritable, NullWritable, Text]#Context): Unit = {
@@ -108,57 +155,16 @@ abstract class DumpFactsSnapshotMapper[K <: Writable] extends Mapper[K, BytesWri
   }
 }
 
-class DumpFactsSnapshotV1Mapper extends DumpFactsSnapshotMapper[NullWritable] {
-  val fact = new NamespacedThriftFact with NamespacedThriftFactDerived
-  override def map(key: NullWritable, value: BytesWritable, context: Mapper[NullWritable, BytesWritable, NullWritable, Text]#Context): Unit = {
-    serializer.fromBytesViewUnsafe(fact, value.getBytes, 0, value.getLength)
-    write(fact, context)
+class DumpFactsV1SnapshotMapper extends DumpFactsSnapshotMapper[NullWritable] {
+  override def setupSplit(context: Mapper[NullWritable, BytesWritable, NullWritable, Text]#Context, split: InputSplit): Unit = {
+    super.setupSplit(context, split)
+    converter = MutableFactConverter()
   }
 }
 
-class DumpFactsSnapshotV2Mapper extends DumpFactsSnapshotMapper[IntWritable] {
-  val tfact = new ThriftFact
-  var namespace: String = null
-
-  override def setup(context: Mapper[IntWritable, BytesWritable, NullWritable, Text]#Context): Unit = {
-    super.setup(context)
-    namespace = Namespace.nameFromStringDisjunction(MrContext.getSplitPath(context.getInputSplit).getParent.getName) match {
-      case scalaz.\/-(n) => n.name
-      case scalaz.-\/(e) => Crash.error(Crash.DataIntegrity, s"Can not parse snapshot namespace from path ${e}")
-    }
-  }
-
-  override def map(key: IntWritable, value: BytesWritable, context: Mapper[IntWritable, BytesWritable, NullWritable, Text]#Context): Unit = {
-    serializer.fromBytesViewUnsafe(tfact, value.getBytes, 0, value.getLength)
-    val date = Date.unsafeFromInt(key.get)
-    val fact = FatThriftFact(namespace, date, tfact)
-    write(fact, context)
-  }
-}
-
-class DumpFactsFactsetMapper extends Mapper[NullWritable, BytesWritable, NullWritable, Text] {
-  val serializer = ThriftSerialiser()
-  val buffer = new StringBuilder(4096)
-  val underlying = new ThriftFact
-  val key = NullWritable.get
-  val out = new Text
-  var fact: MutableFact = null
-  var mapper: DumpFactsMapper = null
-
-  override def setup(context: Mapper[NullWritable, BytesWritable, NullWritable, Text]#Context): Unit = {
-    val (id, p) = FactsetInfo.getBaseInfo(context.getInputSplit)
-    val source = s"Factset[${id.render}]"
-    val entities = DumpFactsJob.read(context.getConfiguration, DumpFactsJob.Keys.Entities).toSet
-    val attributes = DumpFactsJob.read(context.getConfiguration, DumpFactsJob.Keys.Attributes).toSet
-    mapper = DumpFactsMapper(entities, attributes, source)
-    fact = FatThriftFact(p.namespace.name, p.date, underlying)
-  }
-
-  override def map(key: NullWritable, value: BytesWritable, context: Mapper[NullWritable, BytesWritable, NullWritable, Text]#Context): Unit = {
-    serializer.fromBytesViewUnsafe(underlying, value.getBytes, 0, value.getLength)
-    if (mapper.accept(fact)) {
-      out.set(mapper.renderWith(fact, buffer))
-      context.write(key, out)
-    }
+class DumpFactsV2SnapshotMapper extends DumpFactsSnapshotMapper[IntWritable] {
+  override def setupSplit(context: Mapper[IntWritable, BytesWritable, NullWritable, Text]#Context, split: InputSplit): Unit = {
+    super.setupSplit(context, split)
+    converter = NamespaceDateFactConverter(Namespaces.fromSnapshotMr(split))
   }
 }

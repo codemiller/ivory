@@ -4,7 +4,7 @@ import com.ambiata.ivory.core._
 import com.ambiata.ivory.core.thrift._
 import com.ambiata.ivory.lookup._
 import com.ambiata.ivory.operation.extraction.chord._
-import com.ambiata.ivory.operation.extraction.snapshot.SnapshotWritable
+import com.ambiata.ivory.operation.extraction.snapshot.{SnapshotReader, SnapshotWritable}
 import com.ambiata.ivory.storage.fact._
 import com.ambiata.ivory.storage.lookup._
 import com.ambiata.ivory.storage.plan._
@@ -54,11 +54,13 @@ object ChordJob {
     job.setOutputValueClass(classOf[BytesWritable])
 
     // input
-    val incrementalMapper = plan.snapshot.map(_.info.format match {
+    IvoryInputs.configure(ctx, job, repository, plan.datasets, {
+      case FactsetFormat.V1 => classOf[ChordV1FactsetMapper]
+      case FactsetFormat.V2 => classOf[ChordV2FactsetMapper]
+    }, {
       case SnapshotFormat.V1 => classOf[ChordV1IncrementalMapper]
       case SnapshotFormat.V2 => classOf[ChordV2IncrementalMapper]
-    }).getOrElse(classOf[ChordV1IncrementalMapper])
-    IvoryInputs.configure(ctx, job, repository, plan.datasets, classOf[ChordFactsetMapper], incrementalMapper)
+    })
 
     // output
     val tmpout = new Path(ctx.output, "chord")
@@ -126,7 +128,7 @@ object ChordMapper {
  * The output value is expected (can not be typed checked because its all bytes) to be
  * a thrift serialized NamespacedFact object.
  */
-class ChordFactsetMapper extends CombinableMapper[NullWritable, BytesWritable, BytesWritable, BytesWritable] {
+abstract class ChordFactsetMapper[K <: Writable] extends CombinableMapper[K, BytesWritable, BytesWritable, BytesWritable] {
   import ChordMapper._
 
   /** Thrift deserializer. */
@@ -143,40 +145,45 @@ class ChordFactsetMapper extends CombinableMapper[NullWritable, BytesWritable, B
   val vout = Writables.bytesWritable(4096)
 
   /** Class to emit the key/value bytes, created once per mapper */
-  val emitter: MrEmitter[NullWritable, BytesWritable, BytesWritable, BytesWritable] = MrEmitter()
+  val emitter: MrEmitter[K, BytesWritable, BytesWritable, BytesWritable] = MrEmitter()
 
   /** Class to count number of non skipped facts, created once per mapper */
-  var okCounter: MrCounter[NullWritable, BytesWritable, BytesWritable, BytesWritable] = null
+  var okCounter: MrCounter[K, BytesWritable, BytesWritable, BytesWritable] = null
 
   /** Class to count number of skipped facts, created once per mapper */
-  var skipCounter: MrCounter[NullWritable, BytesWritable, BytesWritable, BytesWritable] = null
+  var skipCounter: MrCounter[K, BytesWritable, BytesWritable, BytesWritable] = null
 
   /** Class to count number of dropped facts that don't appear in dictionary anymore, created once per mapper */
   var dropCounter: Counter = null
 
   /** Thrift object provided from sub class, created once per mapper */
-  val tfact = new ThriftFact
+  val fact: MutableFact = createMutableFact
 
-  /** Class to convert a Thrift fact into a Fact based of the version, created once per mapper */
-  var converter: VersionedFactConverter = null
+  /** Class to convert a key/value into a Fact based of the version, created once per mapper */
+  var converter: MrFactConverter[K, BytesWritable] = null
 
   val featureIdLookup = new FeatureIdLookup
 
   var entities: Entities = null
 
-  override def setup(context: MapperContext[NullWritable]): Unit = {
+  /** The partition this mapper is reading from, created once per input split */
+  var partition: Partition = null
+
+  /** The format the mapper is reading from, set once per mapper from the subclass */
+  val format: FactsetFormat
+
+  override def setup(context: MapperContext[K]): Unit = {
     ctx = MrContext.fromConfiguration(context.getConfiguration)
     ctx.thriftCache.pop(context.getConfiguration, ChordJob.Keys.FeatureIdLookup, featureIdLookup)
     entities = ChordJob.setupEntities(ctx.thriftCache, context.getConfiguration)
   }
 
-  override def setupSplit(context: MapperContext[NullWritable], split: InputSplit): Unit = {
-    val factsetInfo: FactsetInfo = FactsetInfo.fromMr(ctx.thriftCache, ChordJob.Keys.FactsetLookup,
-      ChordJob.Keys.FactsetVersionLookup, context.getConfiguration, split)
-    okCounter = MrCounter("ivory", s"chord.v${factsetInfo.version}.ok", context)
-    skipCounter = MrCounter("ivory", s"chord.v${factsetInfo.version}.skip", context)
+  override def setupSplit(context: MapperContext[K], split: InputSplit): Unit = {
+    val factsetInfo: FactsetInfo = FactsetInfo.fromMr(ctx.thriftCache, ChordJob.Keys.FactsetLookup, context.getConfiguration, split)
+    okCounter = MrCounter("ivory", s"chord.v${format.toStringFormat}.ok", context)
+    skipCounter = MrCounter("ivory", s"chord.v${format.toStringFormat}.skip", context)
     dropCounter = MrCounter("ivory", "drop", context)
-    converter = factsetInfo.factConverter
+    partition = factsetInfo.partition
     priority = factsetInfo.priority
   }
 
@@ -187,32 +194,46 @@ class ChordFactsetMapper extends CombinableMapper[NullWritable, BytesWritable, B
    * 1. chord.<version>.ok - number of facts read
    * 2. chord.<version>.skip - number of facts skipped because they were in the future
    */
-  override def map(key: NullWritable, value: BytesWritable, context: MapperContext[NullWritable]): Unit = {
+  override def map(key: K, value: BytesWritable, context: MapperContext[K]): Unit = {
     emitter.context = context
-    ChordFactsetMapper.map(tfact, converter, value, priority, kout, vout, emitter, okCounter, skipCounter, dropCounter, serializer,
+    ChordFactsetMapper.map(fact, converter, key, value, priority, kout, vout, emitter, okCounter, skipCounter, dropCounter, serializer,
       featureIdLookup, entities)
+  }
+}
+
+class ChordV1FactsetMapper extends ChordFactsetMapper[NullWritable] {
+  import ChordMapper._
+  val format: FactsetFormat = FactsetFormat.V1
+  override def setupSplit(context: MapperContext[NullWritable], split: InputSplit): Unit = {
+    super.setupSplit(context, split)
+    converter = PartitionFactConverter(partition)
+  }
+}
+class ChordV2FactsetMapper extends ChordFactsetMapper[NullWritable] {
+  import ChordMapper._
+  val format: FactsetFormat = FactsetFormat.V2
+  override def setupSplit(context: MapperContext[NullWritable], split: InputSplit): Unit = {
+    super.setupSplit(context, split)
+    converter = PartitionFactConverter(partition)
   }
 }
 
 object ChordFactsetMapper {
 
-  // FIX VersionedFactConverter doesn't make sense, it is being called after deserialization into thrift?
-  def map(tfact: ThriftFact, converter: VersionedFactConverter, input: BytesWritable, priority: Priority,
-          kout: BytesWritable, vout: BytesWritable, emitter: Emitter[BytesWritable, BytesWritable],
-          okCounter: Counter, skipCounter: Counter, dropCounter: Counter, deserializer: ThriftSerialiser,
-          featureIdLookup: FeatureIdLookup, entities: Entities) {
-    deserializer.fromBytesViewUnsafe(tfact, input.getBytes, 0, input.getLength)
-    val f = converter.convert(tfact)
-    val name = f.featureId.toString
+  def map[K <: Writable](fact: MutableFact, converter: MrFactConverter[K, BytesWritable], key: K, value: BytesWritable, priority: Priority,
+          kout: BytesWritable, vout: BytesWritable, emitter: Emitter[BytesWritable, BytesWritable], okCounter: Counter,
+          skipCounter: Counter, dropCounter: Counter, deserializer: ThriftSerialiser, featureIdLookup: FeatureIdLookup, entities: Entities) {
+    converter.convert(fact, key, value, deserializer)
+    val name = fact.featureId.toString
     val featureId = featureIdLookup.getIds.get(name)
     if (featureId == null)
       dropCounter.count(1)
-    else if (!entities.keep(f))
+    else if (!entities.keep(fact))
       skipCounter.count(1)
     else {
       okCounter.count(1)
-      SnapshotWritable.KeyState.set(f, priority, kout, featureId)
-      val bytes = deserializer.toBytes(f.toNamespacedThrift)
+      SnapshotWritable.KeyState.set(fact, priority, kout, featureId)
+      val bytes = deserializer.toBytes(fact)
       vout.set(bytes, 0, bytes.length)
       emitter.emit(kout, vout)
     }
@@ -227,6 +248,9 @@ abstract class ChordIncrementalMapper[K <: Writable] extends CombinableMapper[K,
 
   /** Thrift deserializer */
   val serializer = ThriftSerialiser()
+
+  /** Empty Fact, created once per mapper and mutated for each record */
+  val fact = createMutableFact
 
   /** Output key, created once per mapper and mutated for each record */
   val kout = Writables.bytesWritable(4096)
@@ -250,6 +274,9 @@ abstract class ChordIncrementalMapper[K <: Writable] extends CombinableMapper[K,
 
   var entities: Entities = null
 
+  /** Class to convert a key/value into a Fact based of the version, created once per mapper */
+  var converter: MrFactConverter[K, BytesWritable] = null
+
   override def setupSplit(context: MapperContext[K], split: InputSplit): Unit = {
     super.setup(context)
     val ctx = MrContext.fromConfiguration(context.getConfiguration)
@@ -259,68 +286,35 @@ abstract class ChordIncrementalMapper[K <: Writable] extends CombinableMapper[K,
     skipCounter = MrCounter("ivory", "chord.incr.skip", context)
     dropCounter = MrCounter("ivory", "drop", context)
   }
+
+  override def map(key: K, value: BytesWritable, context: MapperContext[K]): Unit = {
+    emitter.context = context
+    ChordIncrementalMapper.map(fact, key, value, Priority.Max, kout, vout, emitter, okCounter, skipCounter, dropCounter, serializer, featureIdLookup, entities, converter)
+  }
 }
 
 class ChordV1IncrementalMapper extends ChordIncrementalMapper[NullWritable] {
   import ChordMapper._
-
-  /** Empty Fact, created once per mapper and mutated for each record */
-  val fact = new NamespacedThriftFact with NamespacedThriftFactDerived
-
-  override def map(key: NullWritable, value: BytesWritable, context: MapperContext[NullWritable]): Unit = {
-    emitter.context = context
-    ChordIncrementalMapper.mapV1(fact, value, Priority.Max, kout, vout, emitter, okCounter, skipCounter, dropCounter, serializer, featureIdLookup, entities)
+  override def setupSplit(context: MapperContext[NullWritable], split: InputSplit): Unit = {
+    super.setupSplit(context, split)
+    converter = MutableFactConverter()
   }
 }
 
 class ChordV2IncrementalMapper extends ChordIncrementalMapper[IntWritable] {
   import ChordMapper._
-
-  /** Thrift object provided from sub class, created once per mapper */
-  val tfact = new ThriftFact
-
-  /** Namespace of each Fact, created once per mapper, taken from split path */
-  var namespace: String = null
-
   override def setupSplit(context: MapperContext[IntWritable], split: InputSplit): Unit = {
     super.setupSplit(context, split)
-    namespace = Namespace.nameFromStringDisjunction(MrContext.getSplitPath(split).getParent.getName) match {
-      case scalaz.\/-(n) => n.name
-      case scalaz.-\/(e) => Crash.error(Crash.DataIntegrity, s"Can not parse snapshot namespace from path ${e}")
-    }
-  }
-
-  override def map(key: IntWritable, value: BytesWritable, context: MapperContext[IntWritable]): Unit = {
-    emitter.context = context
-    ChordIncrementalMapper.mapV2(tfact, key, value, Priority.Max, kout, vout, emitter, okCounter, skipCounter, dropCounter, serializer, featureIdLookup, entities, namespace)
+    converter = NamespaceDateFactConverter(Namespaces.fromSnapshotMr(split))
   }
 }
 
 object ChordIncrementalMapper {
 
-  def mapV1(fact: NamespacedThriftFact with NamespacedThriftFactDerived, bytes: BytesWritable, priority: Priority,
-          kout: BytesWritable, vout: BytesWritable, emitter: Emitter[BytesWritable, BytesWritable], okCounter: Counter,
-          skipCounter: Counter, dropCounter: Counter, serializer: ThriftSerialiser, featureIdLookup: FeatureIdLookup, entities: Entities) {
-    serializer.fromBytesViewUnsafe(fact, bytes.getBytes, 0, bytes.getLength)
-    emit(fact, bytes, priority, kout, vout, emitter, okCounter, skipCounter, dropCounter, serializer, featureIdLookup, entities)
-  }
-
-  def mapV2(tfact: ThriftFact, key: IntWritable, value: BytesWritable, priority: Priority, kout: BytesWritable, vout: BytesWritable,
-            emitter: Emitter[BytesWritable, BytesWritable], okCounter: Counter, skipCounter: Counter, dropCounter: Counter,
-            serializer: ThriftSerialiser, featureIdLookup: FeatureIdLookup, entities: Entities, namespace: String) {
-    serializer.fromBytesViewUnsafe(tfact, value.getBytes, 0, value.getLength)
-    val date = Date.unsafeFromInt(key.get)
-    val fact = FatThriftFact(namespace, date, tfact)
-    val bytes = serializer.toBytes(fact)
-
-    // WARNING reusing input value BytesWritable
-    value.set(bytes, 0, bytes.length)
-    emit(fact, value, priority, kout, vout, emitter, okCounter, skipCounter, dropCounter, serializer, featureIdLookup, entities)
-  }
-
-  def emit(fact: Fact, bytes: BytesWritable, priority: Priority, kout: BytesWritable, vout: BytesWritable,
-           emitter: Emitter[BytesWritable, BytesWritable], okCounter: Counter, skipCounter: Counter, dropCounter: Counter,
-           serializer: ThriftSerialiser, featureIdLookup: FeatureIdLookup, entities: Entities) {
+  def map[K <: Writable](fact: MutableFact, key: K, value: BytesWritable, priority: Priority, kout: BytesWritable, vout: BytesWritable,
+                         emitter: Emitter[BytesWritable, BytesWritable], okCounter: Counter, skipCounter: Counter, dropCounter: Counter,
+                         serializer: ThriftSerialiser, featureIdLookup: FeatureIdLookup, entities: Entities, converter: MrFactConverter[K, BytesWritable]) {
+    converter.convert(fact, key, value, serializer)
     val name = fact.featureId.toString
     val featureId = featureIdLookup.getIds.get(name)
     if (featureId == null)
@@ -330,8 +324,8 @@ object ChordIncrementalMapper {
     else {
       okCounter.count(1)
       SnapshotWritable.KeyState.set(fact, priority, kout, featureIdLookup.getIds.get(fact.featureId.toString))
-      // Pass through the bytes
-      vout.set(bytes.getBytes, 0, bytes.getLength)
+      val bytes = serializer.toBytes(fact)
+      vout.set(bytes, 0, bytes.length)
       emitter.emit(kout, vout)
     }
   }

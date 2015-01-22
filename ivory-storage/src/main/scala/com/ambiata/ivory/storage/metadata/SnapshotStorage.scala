@@ -32,13 +32,13 @@ object SnapshotStorage {
     store <- FeatureStoreTextStorage.fromId(repository, metadata.storeId)
     dictionary <- metadata.dictionaryId.traverseU(id => Metadata.dictionaryFromIvory(repository, id).map(Identified(id, _)))
     manifest <- SnapshotManifest.io(repository, metadata.id).readOrFail
-    info <- manifest.format match {
+    bytes <- manifest.format match {
       case SnapshotFormat.V1 =>
-        size(repository, metadata.id).map(b => SnapshotInfoV1(b))
+        size(repository, metadata.id).map(_.left)
       case SnapshotFormat.V2 =>
-        sizeNamespaces(repository, metadata.id).map(s => SnapshotInfoV2(s))
+        sizeNamespaces(repository, metadata.id).map(_.right)
     }
-  } yield Snapshot(metadata.id, metadata.date, store, dictionary, info)
+  } yield Snapshot(metadata.id, metadata.date, store, dictionary, bytes, manifest.format)
 
   /*  This should be coming from metadata, see: https://github.com/ambiata/ivory/issues/556 */
   def sizeKey(repository: Repository, key: Key): RIO[Bytes] =
