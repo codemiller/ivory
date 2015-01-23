@@ -103,7 +103,7 @@ trait SquashReducer[A <: Writable] extends Reducer[BytesWritable, BytesWritable,
   val emitter = MrEmitter[BytesWritable, BytesWritable, NullWritable, A]()
   val vout: A
 
-  val factEmitter = new ThriftByteMutator
+  val serialiser = ThriftSerialiser()
   val lookup = new FeatureReductionLookup()
   var isSetLookup: Array[Boolean] = null
   val fact = createMutableFact
@@ -137,7 +137,7 @@ trait SquashReducer[A <: Writable] extends Reducer[BytesWritable, BytesWritable,
     // Compiling an expression is (eventually) going to get more expensive, and so we only want to do it on demand
     // For this reason we sort by featureId and compile once here, and process all the entities
     val pool = ReducerPool.create(lookup.getReductions.get(featureId).asScala.toList, isSet, trace)
-    state.reduceAll(fact, emitFact, pool, factEmitter, iterable.iterator, emitter, vout)
+    state.reduceAll(fact, emitFact, pool, iterable.iterator, emitter, vout, serialiser)
   }
 
   def trace(fr: FeatureReduction, r: Reduction): Reduction =

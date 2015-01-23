@@ -1,7 +1,7 @@
 package com.ambiata.ivory.operation.extraction
 
 import com.ambiata.ivory.core._
-import com.ambiata.ivory.lookup.{FeatureIdLookup, SnapshotWindowLookup, FlagLookup}
+import com.ambiata.ivory.lookup.{FeatureIdLookup, SnapshotWindowLookup, FlagLookup, NamespaceLookup}
 import com.ambiata.ivory.operation.extraction.snapshot._, SnapshotWritable._
 import com.ambiata.ivory.storage.fact._
 import com.ambiata.ivory.storage.lookup._
@@ -76,6 +76,7 @@ object SnapshotJob {
     ctx.thriftCache.push(job, Keys.FeatureIdLookup, featureIdLookup)
     ctx.thriftCache.push(job, Keys.WindowLookup, windowLookup)
     ctx.thriftCache.push(job, Keys.FeatureIsSetLookup, FeatureLookups.isSetTable(plan.commit.dictionary.value))
+    ctx.thriftCache.push(job, ReducerLookups.Keys.NamespaceLookup, ReducerLookups.index(plan.commit.dictionary.value)._1)
 
     // run job
     if (!job.waitForCompletion(true))
@@ -113,7 +114,7 @@ object SnapshotJob {
     val FactsetVersionLookup = ThriftCache.Key("factset-version-lookup")
     val WindowLookup = ThriftCache.Key("factset-window-lookup")
     val FeatureIsSetLookup = ThriftCache.Key("feature-is-set-lookup")
-    val Out = "snap"
+    val Out = "out" // MultipleOutputs named output
   }
 }
 
@@ -340,8 +341,8 @@ object SnapshotIncrementalMapper {
 class SnapshotReducer extends Reducer[BytesWritable, BytesWritable, IntWritable, BytesWritable] {
   import SnapshotReducer._
 
-  /** Thrift deserializer */
-  val serializer = ThriftSerialiser()
+  /** Thrift deserialiser */
+  val serialiser = ThriftSerialiser()
 
   /** Empty Fact, created once per reducer and mutated per record */
   val fact: MutableFact = createMutableFact
@@ -355,8 +356,6 @@ class SnapshotReducer extends Reducer[BytesWritable, BytesWritable, IntWritable,
   /** Class to emit the key/value bytes, created once per mapper */
   var emitter: MrMultiEmitter[IntWritable, BytesWritable] = null
 
-  val mutator = new ThriftByteMutator
-
   /** Optimised array lookup for features to the window, where we know that features are simply ordered from zero */
   var windowLookup: Array[Int] = null
 
@@ -365,6 +364,8 @@ class SnapshotReducer extends Reducer[BytesWritable, BytesWritable, IntWritable,
   var feaureIdStrings: Array[String] = null
 
   var featureCounter: LabelledCounter = null
+
+  var namespaceLookup: NamespaceLookup = new NamespaceLookup
 
   override def setup(context: ReducerContext): Unit = {
     val ctx = MrContext.fromConfiguration(context.getConfiguration)
@@ -381,7 +382,9 @@ class SnapshotReducer extends Reducer[BytesWritable, BytesWritable, IntWritable,
     // Kinda sucky for debugging - we're using ints for counters because Hadoop limits the size of counter names to 64
     feaureIdStrings = FeatureLookups.sparseMapToArray(windowLookupThrift.getWindow.asScala.toList
       .map { case (fid, _) => fid.intValue() -> fid.toString }, "")
-  
+
+    ctx.thriftCache.pop(context.getConfiguration, ReducerLookups.Keys.NamespaceLookup, namespaceLookup)
+
     emitter = MrMultiEmitter(new MultipleOutputs(context))
   }
 
@@ -389,9 +392,9 @@ class SnapshotReducer extends Reducer[BytesWritable, BytesWritable, IntWritable,
     emitter.close()
 
   override def reduce(key: BytesWritable, iter: JIterable[BytesWritable], context: ReducerContext): Unit = {
-    val feature = SnapshotWritable.GroupingEntityFeatureId.getFeatureId(key)
-    val windowStart = Date.unsafeFromInt(windowLookup(feature))
-    val count = SnapshotReducer.reduce(fact, iter.iterator, mutator, emitter, kout, vout, windowStart, isSetLookup(feature))
+    val feature: Int = SnapshotWritable.GroupingEntityFeatureId.getFeatureId(key)
+    val windowStart: Date = Date.unsafeFromInt(windowLookup(feature))
+    val count: Int = SnapshotReducer.reduce(fact, iter.iterator, emitter, kout, vout, windowStart, isSetLookup(feature), serialiser, namespaceLookup.namespaces.get(feature))
 // FIX MAX COUNTERS    featureCounter.count(feaureIdStrings(feature), count)
     ()
   }
@@ -411,14 +414,17 @@ object SnapshotReducer {
 
   val outputName = SnapshotJob.Keys.Out
 
-  def reduce(fact: MutableFact, iter: JIterator[BytesWritable], mutator: ThriftByteMutator,
-             emitter: MultiEmitter[IntWritable, BytesWritable], kout: IntWritable, vout: BytesWritable, windowStart: Date, isSet: Boolean): Int = {
+  def reduce(fact: MutableFact, iter: JIterator[BytesWritable], emitter: MultiEmitter[IntWritable, BytesWritable],
+             kout: IntWritable, vout: BytesWritable, windowStart: Date, isSet: Boolean, serialiser: ThriftSerialiser,
+             namespace: String): Int = {
+
     var datetime = sentinelDateTime
     var count = 0
-    var path: String = null
+    // emit to namespaced subdirs
+    var path = "snapshot" + "/" + namespace + "/part"
     while(iter.hasNext) {
       val next = iter.next
-      mutator.from(next, fact)
+      ThriftByteMutator.from(next, fact, serialiser)
       // Respect the "highest" priority (ie. the first fact with any given datetime), unless this is a set
       // then we want to include every value (at least until we have keyed sets, see https://github.com/ambiata/ivory/issues/376).
       if (datetime != fact.datetime || isSet) {
@@ -432,9 +438,7 @@ object SnapshotReducer {
         datetime = fact.datetime
         // Store the current fact, which may or may not be emitted depending on the next fact
         kout.set(fact.date.int)
-        mutator.mutate(fact.toThrift, vout)
-        // emit to namespaced subdirs
-        path = "snapshot" + "/" + fact.namespace.name + "/part"
+        ThriftByteMutator.mutate(fact.toThrift, vout, serialiser)
       }
     }
     // _Always_ emit the last fact, which will be within the window, or the last fact

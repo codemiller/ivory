@@ -4,7 +4,7 @@ import com.ambiata.ivory.core._
 import com.ambiata.ivory.core.thrift._
 import com.ambiata.ivory.lookup._
 import com.ambiata.ivory.operation.extraction.chord._
-import com.ambiata.ivory.operation.extraction.snapshot.{SnapshotReader, SnapshotWritable}
+import com.ambiata.ivory.operation.extraction.snapshot.SnapshotWritable
 import com.ambiata.ivory.storage.fact._
 import com.ambiata.ivory.storage.lookup._
 import com.ambiata.ivory.storage.plan._
@@ -355,8 +355,6 @@ class ChordReducer extends Reducer[BytesWritable, BytesWritable, NullWritable, B
   /** Class to emit the key/value bytes, created once per mapper */
   val emitter: MrEmitter[BytesWritable, BytesWritable, NullWritable, BytesWritable] = MrEmitter()
 
-  val mutator = new ThriftByteMutator
-
   var entities: Entities = null
   var featureWindows: Array[Option[Date => Date]] = null
   /** Shared array which can be re-used which is allocated size of the largest number of chords for a single entity */
@@ -395,7 +393,7 @@ class ChordReducer extends Reducer[BytesWritable, BytesWritable, NullWritable, B
       ChordWindows.updateWindowsForChords(chords, dateLookup.get, windows)
     val windowStarts = if (dateLookup.isDefined) windows else null
 
-    ChordReducer.reduce(fact, iter.iterator, mutator, chordEmitter, vout, chords, windowStarts, buffer, isSetLookup(feature))
+    ChordReducer.reduce(fact, iter.iterator, chordEmitter, vout, chords, windowStarts, buffer, isSetLookup(feature), serializer)
   }
 }
 
@@ -426,7 +424,7 @@ object ChordReducer {
     val kout = NullWritable.get()
 
     /** `windowStarts` will be the same length as `dates`, or `null` if no window is set for the current feature. */
-    def emit(fact: MutableFact, mutator: ThriftByteMutator, out: BytesWritable, dates: Array[Int], windowStarts: Array[Int],
+    def emit(fact: MutableFact, out: BytesWritable, dates: Array[Int], windowStarts: Array[Int],
              buffer: StringBuilder, previousDatetime: DateTime, date: Date, offset: Int): Int = {
       var i = offset
       // For window features _always_ emit the last fact before the window (for state-based features)
@@ -446,9 +444,8 @@ object ChordReducer {
     }
   }
 
-  def reduce(fact: MutableFact, iter: JIterator[BytesWritable], mutator: ThriftByteMutator,
-             emitter: ChordWindowEmitter, out: BytesWritable, dates: Array[Int], windowStarts: Array[Int],
-             buffer: StringBuilder, isSet: Boolean): Unit = {
+  def reduce(fact: MutableFact, iter: JIterator[BytesWritable], emitter: ChordWindowEmitter, out: BytesWritable,
+             dates: Array[Int], windowStarts: Array[Int], buffer: StringBuilder, isSet: Boolean, serializer: ThriftSerialiser): Unit = {
 
     /**
      * Entity ids need to be appended with the date in the chord file as its possible to have the same entity
@@ -458,7 +455,7 @@ object ChordReducer {
       // If the first chord has no matches there won't be anything to emit
       // It also covers the (otherwise impossible) case that the iterator is empty
       if (previousDatetime != sentinelDateTime) {
-        emitter.emit(fact, mutator, out, dates, windowStarts, buffer, previousDatetime, date, offset)
+        emitter.emit(fact, out, dates, windowStarts, buffer, previousDatetime, date, offset)
       } else {
         var i = offset
         // Ignore any old chords that don't have a matching fact
@@ -473,14 +470,14 @@ object ChordReducer {
     var previousDatetime = sentinelDateTime
     while (iter.hasNext) {
       val next = iter.next
-      mutator.from(next, fact)
+      ThriftByteMutator.from(next, fact, serializer)
       val datetime = fact.datetime
       // facts are in priority order already, so this simply takes the top priority when there is a date/time clash
       if (datetime != previousDatetime || isSet) {
         i = emitEntity(previousDatetime, datetime.date, i)
         previousDatetime = datetime
         // Store this fact to be emitted if we can't find a better match
-        mutator.pipe(next, out)
+        ThriftByteMutator.pipe(next, out)
       }
     }
     // Flush the remaining chords

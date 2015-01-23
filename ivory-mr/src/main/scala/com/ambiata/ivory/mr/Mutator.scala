@@ -4,16 +4,14 @@ import com.ambiata.poacher.mr.ThriftSerialiser
 import com.ambiata.ivory.core.thrift._
 import org.apache.hadoop.io.BytesWritable
 
-class ThriftByteMutator {
+object ThriftByteMutator {
 
-  val serializer = ThriftSerialiser()
-
-  def from[T](in: BytesWritable, thrift: T)(implicit ev: T <:< ThriftLike): Unit = {
+  def from[T](in: BytesWritable, thrift: T, serializer: ThriftSerialiser)(implicit ev: T <:< ThriftLike): Unit = {
     serializer.fromBytesViewUnsafe(thrift, in.getBytes, 0, in.getLength)
     ()
   }
 
-  def mutate[T](in: T, vout: BytesWritable)(implicit ev: T <:< ThriftLike): Unit = {
+  def mutate[T](in: T, vout: BytesWritable, serializer: ThriftSerialiser)(implicit ev: T <:< ThriftLike): Unit = {
     // It's unfortunate we can't re-use the byte array here too :(
     val bytes = serializer.toBytes(in)
     vout.set(bytes, 0, bytes.length)

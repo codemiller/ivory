@@ -60,7 +60,7 @@ class SparseOutputSpec extends Specification with SampleFacts with ThrownExpecta
     _               <- RepositoryBuilder.createRepo(repo, dictionary, facts)
     eav             = dir </> DirPath.unsafe("eav")
     snapshot        <- Snapshots.takeSnapshot(repo, IvoryFlags.default, Date.maxValue)
-    squash          <- SquashJob.squashFromSnapshotWith(repo, snapshot.toMetadata, SquashConfig.testing, cluster)
+    squash          <- SquashJob.squashFromSnapshotWith(repo, snapshot, SquashConfig.testing, cluster)
     input           = squash._1
     _               <- SparseOutput.extractWithDictionary(repo, input, ShadowOutputDataset(HdfsLocation(eav.path)), dictionary, Delimiter.Psv, "NA", escaping)
     dictLocation    <- IvoryLocation.fromUri((dir </> "eav" </> ".dictionary").path, conf)

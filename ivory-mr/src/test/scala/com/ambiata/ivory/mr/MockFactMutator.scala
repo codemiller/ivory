@@ -10,10 +10,10 @@ import scala.collection.JavaConverters._
 object MockFactMutator {
 
   /** For testing MR code that deals with a stream of fact bytes */
-  def run(facts: List[Fact])(f: (JIterator[BytesWritable], ThriftByteMutator, Emitter[NullWritable, BytesWritable], BytesWritable) => Unit): List[Fact] =
-    runKeep(facts)(f)._1
+  def run(facts: List[Fact])(f: (JIterator[BytesWritable], Emitter[NullWritable, BytesWritable], BytesWritable) => Unit): List[Fact] =
+    runFatFactKeep(facts)(f)._1
 
-  def runKeep[A](facts: List[Fact])(f: (JIterator[BytesWritable], ThriftByteMutator, Emitter[NullWritable, BytesWritable], BytesWritable) => A): (List[Fact], A) = {
+  def runFatFactKeep[A](facts: List[Fact])(f: (JIterator[BytesWritable], Emitter[NullWritable, BytesWritable], BytesWritable) => A): (List[Fact], A) = {
     val outFacts = new collection.mutable.ListBuffer[Fact]
     val serialiser = ThriftSerialiser()
     val emitter = new Emitter[NullWritable, BytesWritable] {
@@ -22,11 +22,11 @@ object MockFactMutator {
         ()
       }
     }
-    val result = iterateFactsAsBytes(facts)(iter => f(iter, new ThriftByteMutator, emitter, Writables.bytesWritable(4096)))
+    val result = iterateFactsAsBytes(facts)(iter => f(iter, emitter, Writables.bytesWritable(4096)))
     (outFacts.toList, result)
   }
 
-  def runV2Keep[A](facts: List[Fact])(f: (JIterator[BytesWritable], ThriftByteMutator, MultiEmitter[IntWritable, BytesWritable], IntWritable, BytesWritable) => A): (List[(String, Fact)], A) = {
+  def runThriftFactKeep[A](facts: List[Fact])(f: (JIterator[BytesWritable], MultiEmitter[IntWritable, BytesWritable], IntWritable, BytesWritable) => A): (List[(String, Fact)], A) = {
     val serialiser = ThriftSerialiser()
     val emitter = TestMultiEmitter[IntWritable, BytesWritable, Fact]((k, v, p) => {
       val d = Date.unsafeFromInt(k.get)
@@ -34,7 +34,7 @@ object MockFactMutator {
       serialiser.fromBytesViewUnsafe(tfact, v.getBytes, 0, v.getLength)
       FatThriftFact(p, d, tfact)
     })
-    val result = iterateFactsAsBytes(facts)(iter => f(iter, new ThriftByteMutator, emitter, new IntWritable(0), Writables.bytesWritable(4096)))
+    val result = iterateFactsAsBytes(facts)(iter => f(iter, emitter, new IntWritable(0), Writables.bytesWritable(4096)))
     (emitter.emitted.toList, result)
   }
 
