@@ -32,7 +32,7 @@ SnapshotMapperSpec
     val kout = Writables.bytesWritable(4096)
     val vout = Writables.bytesWritable(4096)
     val fact: MutableFact = createMutableFact
-    val emitter = TestEmitter()
+    val emitter = newEmitter
     val okCounter = MemoryCounter()
     val skipCounter = MemoryCounter()
     val dropCounter = MemoryCounter()
@@ -61,7 +61,7 @@ SnapshotMapperSpec
     val kout = Writables.bytesWritable(4096)
     val vout = Writables.bytesWritable(4096)
     val empty: MutableFact = createMutableFact
-    val emitter = TestEmitter()
+    val emitter = newEmitter
     val okCounter = MemoryCounter()
     val dropCounter = MemoryCounter()
     val lookup = new FeatureIdLookup(new java.util.HashMap[String, Integer])
@@ -80,12 +80,16 @@ SnapshotMapperSpec
     assertMapperOutput(emitter, okCounter, MemoryCounter(), dropCounter, fs, 0, dropped.length, Priority.Max, serializer)
   })
 
-  def assertMapperOutput(emitter: TestEmitter, okCounter: MemoryCounter, skipCounter: MemoryCounter, dropCounter: MemoryCounter, expectedFacts: List[Fact], expectedSkip: Int, expectedDropped: Int, priority: Priority, serializer: ThriftSerialiser): matcher.MatchResult[Any] = {
-    emitter.emittedKeys.toList ==== expectedFacts.map(keyBytes(priority)) and
-    emitter.emittedVals.toList.map(bytes => deserializeValue(bytes, serializer)) ==== expectedFacts and
-    okCounter.counter ==== expectedFacts.length and
-    skipCounter.counter ==== expectedSkip and
-    dropCounter.counter ==== expectedDropped
+  def assertMapperOutput(emitter: TestContextEmitter[BytesWritable, BytesWritable, (String, Fact)], okCounter: MemoryCounter, skipCounter: MemoryCounter, dropCounter: MemoryCounter, expectedFacts: List[Fact], expectedSkip: Int, expectedDropped: Int, priority: Priority, serializer: ThriftSerialiser): matcher.MatchResult[Any] = {
+    (emitter.emitted.toList, okCounter.counter, skipCounter.counter, dropCounter.counter) ==== (
+    (expectedFacts.map(f => (keyBytes(priority)(f), f)), expectedFacts.length, expectedSkip, expectedDropped))
+  }
+
+  def newEmitter: TestContextEmitter[BytesWritable, BytesWritable, (String, Fact)] = {
+    val serializer = ThriftSerialiser()
+    TestContextEmitter((key, value) => {
+      (new String(key.copyBytes), deserializeValue(value.copyBytes, serializer))
+    })
   }
 
   def deserializeValue(bytes: Array[Byte], serializer: ThriftSerialiser): Fact =

@@ -51,7 +51,7 @@ abstract class RenameMapper[K <: Writable] extends CombinableMapper[K, BytesWrit
   }
 
   override def map(key: K, value: BytesWritable, context: MapperContext): Unit = {
-    converter.convert(fact, key, value, serializer)
+    converter.convert(fact, key, value)
     val to = mapping.getMapping.get(fact.featureId.toString)
     if (to != null) {
       /***************************************************************

@@ -88,7 +88,7 @@ object GroupByEntityOutputJob {
 
     // cache / config initializtion
 
-    val (_, lookup) = ReducerLookups.indexDefinitions(dictionary.sortedByFeatureId)
+    val (_, lookup) = ReducerLookups.index(dictionary)
     ctx.thriftCache.push(job, Keys.FeatureIds, lookup)
 
     // run job

@@ -19,7 +19,7 @@ import org.apache.hadoop.io.compress.CompressionCodec
 import org.apache.hadoop.io.{BytesWritable, NullWritable}
 import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.mapreduce.lib.input.{MultipleInputs, SequenceFileInputFormat}
-import org.apache.hadoop.mapreduce.lib.output.{FileOutputFormat, SequenceFileOutputFormat}
+import org.apache.hadoop.mapreduce.lib.output.{FileOutputFormat, SequenceFileOutputFormat, MultipleOutputs, LazyOutputFormat}
 import scala.collection.JavaConverters._
 import scalaz._, Scalaz._, effect.IO
 
@@ -34,7 +34,7 @@ object SquashJob {
     commitId   <- Metadata.findOrCreateLatestCommitId(repository)
     commit     <- CommitStorage.byIdOrFail(repository, commitId)
     dictionary =  commit.dictionary.value
-    job        <- SquashJob.initSnapshotJob(repository, cluster.hdfsConfiguration, snapshot.date, snapshot.format, SnapshotOutput(snapshot))
+    job        <- SquashJob.initSnapshotJob(repository, cluster.hdfsConfiguration, snapshot.date, snapshot.format, snapshot)
     result     <- squash(repository, dictionary, conf, job, cluster)
     _          <- SnapshotExtractManifest.io(cluster.toIvoryLocation(result.location)).write(SnapshotExtractManifest.create(commitId, snapshot.id))
   } yield result -> dictionary
@@ -52,7 +52,6 @@ object SquashJob {
    */
   def squash(repository: Repository, dictionary: Dictionary, conf: SquashConfig,
              job: (Job, MrContext, Int), cluster: Cluster): RIO[ShadowOutputDataset] = for {
-    _      <- initJob(job._1)
     key    <- Repository.tmpDir("squash")
     hr     <- repository.asHdfsRepository
     shadow = ShadowOutputDataset.fromIvoryLocation(hr.toIvoryLocation(key))
@@ -60,8 +59,8 @@ object SquashJob {
     _      <- IvoryLocation.writeUtf8Lines(hr.toIvoryLocation(key) </> FileName.unsafe(".profile"), SquashStats.asPsvLines(prof))
   } yield shadow
 
-  def initSnapshotJob(repo: Repository, conf: Configuration, date: Date, format: SnapshotFormat, snapshotOutput: SnapshotOutput): RIO[(Job, MrContext, Int)] = for {
-    inputs   <- snapshotOutput.location(repo).traverse(_.asHdfsIvoryLocation.map(_.toHdfsPath))
+  def initSnapshotJob(repo: Repository, conf: Configuration, date: Date, format: SnapshotFormat, snapshot: Snapshot): RIO[(Job, MrContext, Int)] = for {
+    inputs   <- SnapshotStorage.location(repo, snapshot).traverse(_.asHdfsIvoryLocation.map(_.toHdfsPath))
     // This is about the best we can do at the moment, until we have more size information about each feature
     reducers <- ReducerSize.calculateMulti(inputs, 1.gb).run(conf)
     ret      <- RIO.safe {
@@ -108,15 +107,6 @@ object SquashJob {
     } yield ret
   }
 
-  def initJob(job: Job): RIO[Unit] = RIO.safe[Unit] {
-    // reducer
-    job.setOutputKeyClass(classOf[NullWritable])
-    job.setOutputValueClass(classOf[BytesWritable])
-
-    // output
-    job.setOutputFormatClass(classOf[SequenceFileOutputFormat[_, _]])
-  }
-
   def run(job: Job, ctx: MrContext, reducers: Int, dict: Dictionary, output: Path, codec: Option[CompressionCodec],
           squashConf: SquashConfig, latest: Boolean): RIO[SquashStats] = {
 
@@ -134,8 +124,9 @@ object SquashJob {
 
     job.setNumReduceTasks(reducers)
 
-    val tmpout = new Path(ctx.output, "squash")
-    FileOutputFormat.setOutputPath(job, tmpout)
+    LazyOutputFormat.setOutputFormatClass(job, classOf[SequenceFileOutputFormat[_, _]])
+    MultipleOutputs.addNamedOutput(job, Keys.Out, classOf[SequenceFileOutputFormat[_, _]],  classOf[NullWritable], classOf[BytesWritable])
+    FileOutputFormat.setOutputPath(job, ctx.output)
 
     // compression
     codec.foreach(cc => {
@@ -213,5 +204,7 @@ object SquashJob {
     val ProfileSaveGroup = "squash-profile-save"
     val ExpressionLookup = ThriftCache.Key("squash-expression-lookup")
     val FeatureIsSetLookup = ThriftCache.Key("feature-is-set-lookup")
+    val Out = "out"
+    val outputPath = "squash/part"
   }
 }

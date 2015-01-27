@@ -4,50 +4,44 @@ import com.ambiata.ivory.core._
 import com.ambiata.ivory.core.thrift.ThriftFact
 import com.ambiata.poacher.mr._
 import org.apache.hadoop.io.{Text, BytesWritable, NullWritable, IntWritable}
+import org.apache.hadoop.fs.Path
 import java.util.{Iterator => JIterator}
 import scala.collection.JavaConverters._
 
 object MockFactMutator {
 
   /** For testing MR code that deals with a stream of fact bytes */
-  def run(facts: List[Fact])(f: (JIterator[BytesWritable], Emitter[NullWritable, BytesWritable], BytesWritable) => Unit): List[Fact] =
+  def run(facts: List[Fact])(f: (JIterator[BytesWritable], OutputEmitter[NullWritable, BytesWritable], BytesWritable) => Unit): List[Fact] =
     runFatFactKeep(facts)(f)._1
 
-  def runFatFactKeep[A](facts: List[Fact])(f: (JIterator[BytesWritable], Emitter[NullWritable, BytesWritable], BytesWritable) => A): (List[Fact], A) = {
-    val outFacts = new collection.mutable.ListBuffer[Fact]
+  def runFatFactKeep[A](facts: List[Fact])(f: (JIterator[BytesWritable], OutputEmitter[NullWritable, BytesWritable], BytesWritable) => A): (List[Fact], A) = {
     val serialiser = ThriftSerialiser()
-    val emitter = new Emitter[NullWritable, BytesWritable] {
-      def emit(key: NullWritable, value: BytesWritable): Unit = {
-        outFacts += serialiser.fromBytesViewUnsafe(createMutableFact, value.getBytes, 0, value.getLength)
-        ()
-      }
-    }
+    val emitter = TestOutputEmitter[NullWritable, BytesWritable, Fact]((key, value, path) => {
+      serialiser.fromBytesViewUnsafe(createMutableFact, value.getBytes, 0, value.getLength)
+    })
     val result = iterateFactsAsBytes(facts)(iter => f(iter, emitter, Writables.bytesWritable(4096)))
-    (outFacts.toList, result)
+    (emitter.emitted.toList, result)
   }
 
-  def runThriftFactKeep[A](facts: List[Fact])(f: (JIterator[BytesWritable], MultiEmitter[IntWritable, BytesWritable], IntWritable, BytesWritable) => A): (List[(String, Fact)], A) = {
+  def runThriftFactKeep[A](facts: List[Fact])(f: (JIterator[BytesWritable], OutputEmitter[IntWritable, BytesWritable], IntWritable, BytesWritable) => A): (List[Fact], A) = {
     val serialiser = ThriftSerialiser()
-    val emitter = TestMultiEmitter[IntWritable, BytesWritable, Fact]((k, v, p) => {
-      val d = Date.unsafeFromInt(k.get)
+    val emitter = TestOutputEmitter[IntWritable, BytesWritable, Fact]((key, value, path) => {
+      val namespace = new Path(path).getParent.getName
+      val date = Date.unsafeFromInt(key.get)
       val tfact = new ThriftFact
-      serialiser.fromBytesViewUnsafe(tfact, v.getBytes, 0, v.getLength)
-      FatThriftFact(p, d, tfact)
+      serialiser.fromBytesViewUnsafe(tfact, value.getBytes, 0, value.getLength)
+      FatThriftFact(namespace, date, tfact)
     })
     val result = iterateFactsAsBytes(facts)(iter => f(iter, emitter, new IntWritable(0), Writables.bytesWritable(4096)))
     (emitter.emitted.toList, result)
   }
 
-  def runText(facts: List[Fact])(f: (JIterator[BytesWritable], Emitter[NullWritable, Text], Text) => Unit): List[String] = {
-    val lines = new collection.mutable.ListBuffer[String]
-    val emitter = new Emitter[NullWritable, Text] {
-      def emit(key: NullWritable, value: Text): Unit = {
-        lines += value.toString
-        ()
-      }
-    }
+  def runText(facts: List[Fact])(f: (JIterator[BytesWritable], OutputEmitter[NullWritable, Text], Text) => Unit): List[String] = {
+    val emitter = TestOutputEmitter[NullWritable, Text, String]((key, value, path) => {
+      value.toString
+    })
     iterateFactsAsBytes(facts)(iter => f(iter, emitter, new Text))
-    lines.toList
+    emitter.emitted.toList
   }
 
   def iterateFactsAsBytes[A](facts: List[Fact])(f: JIterator[BytesWritable] => A): A = {

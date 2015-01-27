@@ -2,23 +2,26 @@ package com.ambiata.ivory.mr
 
 import org.apache.hadoop.io._
 
-case class TestEmitter() extends Emitter[BytesWritable, BytesWritable] {
+case class TestContextEmitter[K <: Writable, V <: Writable, A](f: (K, V) => A) extends ContextEmitter[K, V] {
   import scala.collection.mutable.ListBuffer
-  val emittedKeys: ListBuffer[String] = ListBuffer()
-  val emittedVals: ListBuffer[Array[Byte]] = ListBuffer()
-  def emit(kout: BytesWritable, vout: BytesWritable) {
-    emittedKeys += new String(kout.copyBytes)
-    emittedVals += vout.copyBytes
+  val emitted: ListBuffer[A] = ListBuffer()
+  
+  override def emit(kout: K, vout: V): Unit = {
+    emitted += f(kout, vout)
     ()
   }
 }
 
-case class TestMultiEmitter[K <: Writable, V <: Writable, A](f: (K, V, String) => A) extends MultiEmitter[K, V] {
+case class TestOutputEmitter[K <: Writable, V <: Writable, A](f: (K, V, String) => A) extends OutputEmitter[K, V] {
   import scala.collection.mutable.ListBuffer
-  val emitted: ListBuffer[(String, A)] = ListBuffer()
+  val emitted: ListBuffer[A] = ListBuffer()
+  var closed: Boolean = false
   
-  def emit(name: String, kout: K, vout: V, path: String) {
-    emitted += ((name, f(kout, vout, path)))
+  override def close(): Unit =
+    closed = true
+
+  override def emitPath(kout: K, vout: V, path: String): Unit = {
+    emitted += f(kout, vout, path)
     ()
   }
 }

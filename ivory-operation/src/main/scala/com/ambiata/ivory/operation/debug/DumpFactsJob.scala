@@ -101,7 +101,7 @@ abstract class DumpFactsFactsetMapper[K <: Writable] extends CombinableMapper[K,
   }
 
   override def map(key: K, value: BytesWritable, context: Mapper[K, BytesWritable, NullWritable, Text]#Context): Unit = {
-    converter.convert(fact, key, value, serializer)
+    converter.convert(fact, key, value)
     if (mapper.accept(fact)) {
       vout.set(mapper.renderWith(fact, buffer))
       context.write(kout, vout)
@@ -143,7 +143,7 @@ abstract class DumpFactsSnapshotMapper[K <: Writable] extends CombinableMapper[K
   }
 
   override def map(key: K, value: BytesWritable, context: Mapper[K, BytesWritable, NullWritable, Text]#Context): Unit = {
-    converter.convert(fact, key, value, serializer)
+    converter.convert(fact, key, value)
     write(fact, context)
   }
 

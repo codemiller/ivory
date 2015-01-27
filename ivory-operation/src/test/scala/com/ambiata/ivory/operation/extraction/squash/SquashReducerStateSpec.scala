@@ -73,7 +73,7 @@ class SquashReducerStateSpec extends Specification with ScalaCheck { def is = s2
         SquashJob.concreteGroupToReductions(sf.dict.fid, sf.dict.withExpression(Count).cg, latest = true), false,
         SquashDump.wrap('|', "NA", _, _, { line =>
           out.set(line)
-          emitter.emit(SquashReducerState.kout, out)
+          emitter.emitPath(SquashReducerState.kout, out, "")
         })
       )
       val state = new SquashReducerStateDump(sf.date)

@@ -53,4 +53,12 @@ object SnapshotStorage {
 
   def size(repository: Repository, id: SnapshotId): RIO[Bytes] =
     sizeKey(repository, Repository.snapshot(id))
+
+  def location(repository: Repository, snapshot: Snapshot): List[IvoryLocation] = {
+    val base: Key = Repository.snapshot(snapshot.id)
+    snapshot.bytes match {
+      case -\/(_)  => List(repository.toIvoryLocation(base))
+      case \/-(bs) => bs.map(s => repository.toIvoryLocation(base / s.value.asKeyName))
+    }
+  }
 }

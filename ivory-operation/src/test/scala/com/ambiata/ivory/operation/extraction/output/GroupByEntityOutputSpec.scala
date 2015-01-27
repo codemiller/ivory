@@ -10,6 +10,7 @@ import com.ambiata.ivory.operation.ingestion.thrift.{ThriftFactDense, ThriftFact
 import com.ambiata.ivory.storage.legacy._
 import com.ambiata.ivory.storage.repository._
 import com.ambiata.ivory.operation.extraction.Snapshots
+import com.ambiata.ivory.operation.extraction.squash._
 import com.ambiata.notion.core._
 import com.nicta.scoobi.Scoobi._
 import com.nicta.scoobi.io.thrift._
@@ -100,15 +101,15 @@ class GroupByEntityOutputSpec extends Specification with SampleFacts with Thrown
 
   def createDense[A](facts: List[List[Fact]], dictionary: Dictionary, format: GroupByEntityFormat)(f: (HdfsRepository, IvoryLocation) => RIO[A])(repo: HdfsRepository): RIO[A] = for {
     // Filter out tombstones to simplify the assertions - we're not interested in the snapshot logic here
-    dir    <- LocalTemporary.random.directory
-    _      <- RepositoryBuilder.createRepo(repo, dictionary, facts.map(_.filter(!_.isTombstone)))
-    dense  <- withConf(conf => IvoryLocation.fromUri((dir </> "dense").path, conf))
-    s      <- Snapshots.takeSnapshot(repo, IvoryFlags.default, Date.maxValue)
-    input  = repo.toIvoryLocation(Repository.snapshot(s.id))
-    inputS = ShadowOutputDataset(HdfsLocation(input.show))
-    denseS = ShadowOutputDataset(HdfsLocation(dense.show))
-    _      <- GroupByEntityOutput.createWithDictionary(repo, inputS, denseS, dictionary, format)
-    out    <- f(repo, dense)
+    dir     <- LocalTemporary.random.directory
+    _       <- RepositoryBuilder.createRepo(repo, dictionary, facts.map(_.filter(!_.isTombstone)))
+    dense   <- withConf(conf => IvoryLocation.fromUri((dir </> "dense").path, conf))
+    s       <- Snapshots.takeSnapshot(repo, IvoryFlags.default, Date.maxValue)
+    key     <- ClusterTemporary.withCluster(cluster => SquashJob.squashFromSnapshotWith(repo, s, SquashConfig.testing, cluster))
+    inputS  = key._1
+    denseS  = ShadowOutputDataset(HdfsLocation(dense.show))
+    _       <- GroupByEntityOutput.createWithDictionary(repo, inputS, denseS, dictionary, format)
+    out     <- f(repo, dense)
   } yield out
 
   def createDenseText(facts: List[List[Fact]], dictionary: Dictionary)(repo: HdfsRepository): RIO[(String, List[String])] =
