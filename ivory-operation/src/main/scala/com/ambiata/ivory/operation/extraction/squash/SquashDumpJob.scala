@@ -14,8 +14,8 @@ import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.{NullWritable, Text}
 import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.mapreduce.lib.input.{MultipleInputs, SequenceFileInputFormat}
-import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat
-import scalaz._, effect.IO
+import org.apache.hadoop.mapreduce.lib.output.{TextOutputFormat, MultipleOutputs}
+import scalaz._, Scalaz._, effect.IO
 
 object SquashDumpJob {
 
@@ -32,42 +32,40 @@ object SquashDumpJob {
 
     // HDFS below here
     hr         <- repository.asHdfsRepository
-    _          <- snapshot.format match {
-                    case SnapshotFormat.V1 => RIO.fail("Can not currently run squash dump on snapshot v1")
-                    case SnapshotFormat.V2 => RIO.ok(())
-                  }
-    paths       = IvoryInputs.snapshotKeys(snapshot).map(k => hr.toIvoryLocation(k).toHdfsPath)
-    job        <- initDumpJob(hr.configuration, snapshot.date, paths, filteredDct, lookup)
+    job        <- initDumpJob(hr, snapshot.date, snapshot, filteredDct, lookup)
     out        <- output.asHdfsIvoryLocation
     _          <- SquashJob.run(job._1, job._2, reducers, filteredDct, out.toHdfsPath, hr.codec, SquashConfig.default, latest = false)
   } yield ()
 
-  def initDumpJob(conf: Configuration, date: Date, inputs: List[Path], dictionary: Dictionary, lookup: EntityFilterLookup): RIO[(Job, MrContext)] = RIO.safe {
-
-    val job = Job.getInstance(conf)
-    val ctx = MrContextIvory.newContext("ivory-squash-dump", job)
-
-    job.getConfiguration.set(SnapshotJob.Keys.SnapshotDate, date.int.toString)
-    ctx.thriftCache.push(job, Keys.Filter, lookup)
-
-    // reducer
-    job.setReducerClass(classOf[SquashReducerDump])
-    job.setOutputKeyClass(classOf[NullWritable])
-    job.setOutputValueClass(classOf[Text])
-
-    // input
-    inputs.foreach(input => {
-      println(s"Input path: $input")
-      MultipleInputs.addInputPath(job, input, classOf[SequenceFileInputFormat[_, _]], classOf[SquashMapperFilter])
-    })
-
-    // output
-    job.setOutputFormatClass(classOf[TextOutputFormat[_, _]])
-
-    (job, ctx)
-  }
+  def initDumpJob(repo: HdfsRepository, date: Date, snapshot: Snapshot, dictionary: Dictionary, lookup: EntityFilterLookup): RIO[(Job, MrContext)] = for {
+    inputs <- SnapshotStorage.location(repo, snapshot).traverse(_.asHdfsIvoryLocation.map(_.toHdfsPath))
+    ret    <- RIO.safe {
+      val job = Job.getInstance(repo.configuration)
+      val ctx = MrContextIvory.newContext("ivory-squash-dump", job)
+  
+      job.getConfiguration.set(SnapshotJob.Keys.SnapshotDate, date.int.toString)
+      ctx.thriftCache.push(job, Keys.Filter, lookup)
+  
+      // reducer
+      job.setReducerClass(classOf[SquashReducerDump])
+      job.setOutputKeyClass(classOf[NullWritable])
+      job.setOutputValueClass(classOf[Text])
+  
+      // input
+      inputs.foreach(input => {
+        println(s"Input path: $input")
+        MultipleInputs.addInputPath(job, input, classOf[SequenceFileInputFormat[_, _]], classOf[SquashMapperFilter])
+      })
+  
+      // output
+      MultipleOutputs.addNamedOutput(job, Keys.Out, classOf[TextOutputFormat[_, _]],  classOf[NullWritable], classOf[Text])
+  
+      (job, ctx)
+    }
+  } yield ret
 
   object Keys {
     val Filter = ThriftCache.Key("squash-filter-lookup")
+    val Out = "dumpOut"
   }
 }

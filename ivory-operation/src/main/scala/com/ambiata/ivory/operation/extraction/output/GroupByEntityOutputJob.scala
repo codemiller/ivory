@@ -93,7 +93,7 @@ object GroupByEntityOutputJob {
 
     // run job
     if (!job.waitForCompletion(true))
-      sys.error("ivory dense failed.")
+      Crash.error(Crash.RIO, "ivory dense failed.")
   }
 
   _ <-  Committer.commit(ctx, {

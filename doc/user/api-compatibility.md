@@ -3,6 +3,10 @@ API Compatibility
 
 This document serves as a list of changes to the Ivory API, both in the file format and in the Scala API.
 
+## 1.0.0-*-xxxxxxx
+
+- printFacts in the `Ivory` api has been replaced with `dumpFactsToFile` and `dumpFactsToStdout`. 
+
 ## 1.0.0-*-7e1afa3
 
 - Introduced the concept of a global versioning, which is respected/required by commands requiring `-r/--repository`.

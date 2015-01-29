@@ -10,7 +10,7 @@ import org.apache.hadoop.mapreduce._
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat
 
-import scalaz._, Scalaz._
+import scalaz._
 
 object IvoryInputs {
   def configure(
@@ -23,25 +23,14 @@ object IvoryInputs {
   ): Unit = {
     val summary = datasets.summary
     println(s"""Configuring mapreduce job, with ${summary.partitions} parititons, ${summary.snapshot.map(s => s"and snapshot $s.render, ").getOrElse("")} totalling ${summary.bytes}""")
-    val factsets: List[Factset] =
-      datasets.sets.flatMap(p => p.value match {
-        case FactsetDataset(factset)   => factset.some
-        case SnapshotDataset(snapshot) => none[Factset]
-      })
 
     val factsetSpecifications: List[InputSpecification] =
-      factsets.groupBy(_.format).toList.map({ case (format, factsets) =>
+      datasets.factsets.groupBy(_.format).toList.map({ case (format, factsets) =>
         InputSpecification(classOf[SequenceFileInputFormat[_, _]], factsetMapper(format), factsets.flatMap(f => factsetPaths(repository, f)))
       })
 
-    val snapshots: List[Snapshot] =
-      datasets.sets.flatMap(p => p.value match {
-        case FactsetDataset(factset)   => none[Snapshot]
-        case SnapshotDataset(snapshot) => snapshot.some
-      })
-  
     val snapshotSpecifications: List[InputSpecification] =
-      snapshots.groupBy(_.format).toList.map({ case (format, snapshots) =>
+      datasets.snapshots.groupBy(_.format).toList.map({ case (format, snapshots) =>
         InputSpecification(classOf[SequenceFileInputFormat[_, _]], snapshotMapper(format), snapshots.flatMap(s => snapshotPaths(repository, s)))
       })
 

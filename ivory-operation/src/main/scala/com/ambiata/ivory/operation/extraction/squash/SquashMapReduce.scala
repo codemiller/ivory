@@ -129,8 +129,13 @@ trait SquashReducer[A <: Writable] extends Reducer[BytesWritable, BytesWritable,
     ctx.thriftCache.pop(context.getConfiguration, SquashJob.Keys.FeatureIsSetLookup, isSetLookupThrift)
     isSetLookup = FeatureLookups.isSetLookupToArray(isSetLookupThrift)
 
-    emitter = MrOutputEmitter(SquashJob.Keys.Out, new MultipleOutputs(context))
+    emitter = getEmitter(context)
   }
+
+  def getEmitter(context: ReducerContext): MrOutputEmitter[NullWritable, A]
+
+  override def cleanup(context: ReducerContext): Unit =
+    emitter.close()
 
   override def reduce(key: BytesWritable, iterable: JIterable[BytesWritable], context: ReducerContext): Unit = {
 
@@ -155,6 +160,8 @@ class SquashReducerSnapshot extends SquashReducer[BytesWritable] {
     val date = Date.fromInt(strDate.toInt).getOrElse(Crash.error(Crash.DataIntegrity, s"Invalid snapshot date '$strDate'"))
     new SquashReducerStateSnapshot(date)
   }
+
+  override def getEmitter(context: ReducerContext) = MrOutputEmitter(SquashJob.Keys.Out, new MultipleOutputs(context))
 }
 
 class SquashReducerChord extends SquashReducer[BytesWritable] {
@@ -167,6 +174,8 @@ class SquashReducerChord extends SquashReducer[BytesWritable] {
     ctx.thriftCache.pop(context.getConfiguration, ChordJob.Keys.ChordEntitiesLookup, entities)
     new SquashReducerStateChord(Entities.fromChordEntities(entities))
   }
+
+  override def getEmitter(context: ReducerContext) = MrOutputEmitter(SquashJob.Keys.Out, new MultipleOutputs(context))
 }
 
 class SquashReducerDump extends SquashReducer[Text] {
@@ -185,4 +194,6 @@ class SquashReducerDump extends SquashReducer[Text] {
         vout.set(line)
         emitter.emitPath(SquashReducerState.kout, vout, SquashJob.Keys.outputPath)
     })
+
+  override def getEmitter(context: ReducerContext) = MrOutputEmitter(SquashDumpJob.Keys.Out, new MultipleOutputs(context))
 }

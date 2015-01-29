@@ -10,7 +10,6 @@ import com.ambiata.ivory.operation.ingestion.thrift.{ThriftFactDense, ThriftFact
 import com.ambiata.ivory.storage.legacy._
 import com.ambiata.ivory.storage.repository._
 import com.ambiata.ivory.operation.extraction.Snapshots
-import com.ambiata.ivory.operation.extraction.squash._
 import com.ambiata.notion.core._
 import com.nicta.scoobi.Scoobi._
 import com.nicta.scoobi.io.thrift._
@@ -31,7 +30,7 @@ class GroupByEntityOutputSpec extends Specification with SampleFacts with Thrown
 
 """
   def dense =
-    RepositoryBuilder.using(createDenseText(sampleFacts, sampleDictionary)) must beOkValue(
+    RepositoryBuilder.using(createDenseText(sampleFacts.flatten, sampleDictionary)) must beOkValue(
       """|eid1|abc|NA|NA
          |eid2|NA|11|NA
          |eid3|NA|NA|true
@@ -49,7 +48,7 @@ class GroupByEntityOutputSpec extends Specification with SampleFacts with Thrown
       , IntFact(    "eid2", FeatureId(Namespace("ns1"), "fid2"), Date(2012, 11,  1), Time(0), 11)
       , BooleanFact("eid3", FeatureId(Namespace("ns2"), "fid3"), Date(2012,  3, 20), Time(0), true)
     )
-    RepositoryBuilder.using(createDenseText(List(facts), sampleDictionary)) must beOkValue(
+    RepositoryBuilder.using(createDenseText(facts, sampleDictionary)) must beOkValue(
       """|eid1|ghi|10|NA
          |eid2|NA|11|NA
          |eid3|NA|10|true
@@ -58,13 +57,13 @@ class GroupByEntityOutputSpec extends Specification with SampleFacts with Thrown
   }
 
   def matchDict = prop {(facts: FactsWithDictionary) =>
-    RepositoryBuilder.using(createDenseText(List(facts.facts), facts.dictionary)) must beOkLike {
+    RepositoryBuilder.using(createDenseText(facts.facts, facts.dictionary)) must beOkLike {
       case (out, dict) => seqToResult(out.lines.toList.map(_.split("\\|", -1).size - 1 ==== dict.size))
     }
   }.set(minTestsOk = 5)
 
   def textEscaped = prop { (facts: FactsWithDictionaryMulti) =>
-    RepositoryBuilder.using(createDense(List(facts.facts), facts.dictionary, GroupByEntityFormat.DenseText(Delimiter.Psv, "NA", TextEscaping.Escaped)) {
+    RepositoryBuilder.using(createDense(facts.facts, facts.dictionary, GroupByEntityFormat.DenseText(Delimiter.Psv, "NA", TextEscaping.Escaped)) {
       (_, file) => IvoryLocation.readLines(file)
     }) must beOkLike {
       lines => seqToResult(lines.map(TextEscaping.split('|', _).length ==== facts.dictionary.size + 1))
@@ -72,7 +71,7 @@ class GroupByEntityOutputSpec extends Specification with SampleFacts with Thrown
   }.set(minTestsOk = 5, maxDiscardRatio = 10)
 
   def thriftList = prop { (facts: FactsWithDictionaryMulti) =>
-    RepositoryBuilder.using(createDense(List(facts.facts), facts.dictionary, GroupByEntityFormat.DenseThrift) {
+    RepositoryBuilder.using(createDense(facts.facts, facts.dictionary, GroupByEntityFormat.DenseThrift) {
       (repo, file) => RIO.io(valueFromSequenceFile[ThriftFactDense](file.show).run(repo.scoobiConfiguration).toList)
     }) must beOkLike {
       denseFacts =>
@@ -83,7 +82,7 @@ class GroupByEntityOutputSpec extends Specification with SampleFacts with Thrown
   }.set(minTestsOk = 5, maxDiscardRatio = 10)
 
   def thriftMap = prop { (facts: FactsWithDictionaryMulti) =>
-    RepositoryBuilder.using(createDense(List(facts.facts), facts.dictionary, GroupByEntityFormat.SparseThrift) {
+    RepositoryBuilder.using(createDense(facts.facts, facts.dictionary, GroupByEntityFormat.SparseThrift) {
       (repo, file) => RIO.io(valueFromSequenceFile[ThriftFactSparse](file.show).run(repo.scoobiConfiguration).toList)
     }) must beOkLike {
       denseFacts =>
@@ -99,20 +98,19 @@ class GroupByEntityOutputSpec extends Specification with SampleFacts with Thrown
     "2|ns2|fid3|boolean|categorical|desc|NA"
   )
 
-  def createDense[A](facts: List[List[Fact]], dictionary: Dictionary, format: GroupByEntityFormat)(f: (HdfsRepository, IvoryLocation) => RIO[A])(repo: HdfsRepository): RIO[A] = for {
+  def createDense[A](facts: List[Fact], dictionary: Dictionary, format: GroupByEntityFormat)(f: (HdfsRepository, IvoryLocation) => RIO[A])(repo: HdfsRepository): RIO[A] = for {
     // Filter out tombstones to simplify the assertions - we're not interested in the snapshot logic here
     dir     <- LocalTemporary.random.directory
-    _       <- RepositoryBuilder.createRepo(repo, dictionary, facts.map(_.filter(!_.isTombstone)))
+    _       <- RepositoryBuilder.createDictionary(repo, dictionary)
     dense   <- withConf(conf => IvoryLocation.fromUri((dir </> "dense").path, conf))
-    s       <- Snapshots.takeSnapshot(repo, IvoryFlags.default, Date.maxValue)
-    key     <- ClusterTemporary.withCluster(cluster => SquashJob.squashFromSnapshotWith(repo, s, SquashConfig.testing, cluster))
-    inputS  = key._1
+    s       <- RepositoryBuilder.createSquash(repo, facts)
+    inputS  <- s.asHdfsIvoryLocation.map(ShadowOutputDataset.fromIvoryLocation)
     denseS  = ShadowOutputDataset(HdfsLocation(dense.show))
     _       <- GroupByEntityOutput.createWithDictionary(repo, inputS, denseS, dictionary, format)
     out     <- f(repo, dense)
   } yield out
 
-  def createDenseText(facts: List[List[Fact]], dictionary: Dictionary)(repo: HdfsRepository): RIO[(String, List[String])] =
+  def createDenseText(facts: List[Fact], dictionary: Dictionary)(repo: HdfsRepository): RIO[(String, List[String])] =
     createDense(facts, dictionary, GroupByEntityFormat.DenseText(Delimiter.Psv, "NA", TextEscaping.Delimited))((_, dense) => for {
         dictionaryLines  <- IvoryLocation.readLines(dense </> ".dictionary")
         denseLines       <- IvoryLocation.readLines(dense)

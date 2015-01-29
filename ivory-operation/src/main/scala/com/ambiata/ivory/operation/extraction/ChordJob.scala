@@ -287,6 +287,7 @@ abstract class ChordIncrementalMapper[K <: Writable] extends CombinableMapper[K,
     skipCounter = MrCounter("ivory", "chord.incr.skip", context)
     dropCounter = MrCounter("ivory", "drop", context)
     emitter = MrContextEmitter(context)
+    setupSplitFormat(context, split)
   }
 
   def setupSplitFormat(context: MapperContext[K], split: InputSplit): Unit
@@ -377,9 +378,9 @@ class ChordReducer extends Reducer[BytesWritable, BytesWritable, NullWritable, B
 
     featureWindows = ChordReducer.setupWindows(ctx.thriftCache, context.getConfiguration).map(_.map(a => (b: Date) => Window.startingDate(a, b)))
     windows = new Array(entities.maxChordSize)
-    chordEmitter = new ChordWindowEmitter(emitter)
 
     emitter = MrOutputEmitter(ChordJob.Keys.Out, new MultipleOutputs(context))
+    chordEmitter = new ChordWindowEmitter(emitter)
   }
 
   override def cleanup(context: ReducerContext): Unit =
