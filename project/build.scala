@@ -226,9 +226,6 @@ object build extends Build {
     else
       Seq()
 
-  // Scoobi sometimes swallows exceptions, so if you want to see them do the following:
-  // env NO_FORK=true ./sbt
-  // > test-only <spec> -- scoobi verbose.all
   lazy val testingSettings: Seq[Settings] = Seq(
     logBuffered := false
   , cancelable := true
