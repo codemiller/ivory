@@ -41,14 +41,17 @@ abstract class RenameMapper[K <: Writable] extends CombinableMapper[K, BytesWrit
 
   var counter: Counter = null
 
-  override def setupSplit(context: MapperContext, split: InputSplit): Unit = {
+  final override def setupSplit(context: MapperContext, split: InputSplit): Unit = {
     val ctx = MrContext.fromConfiguration(context.getConfiguration)
     val factsetInfo: FactsetInfo = FactsetInfo.fromMr(ctx.thriftCache, SnapshotJob.Keys.FactsetLookup, context.getConfiguration, split)
     priority = factsetInfo.priority
     partition = factsetInfo.partition
     ctx.thriftCache.pop(context.getConfiguration, RenameJob.Keys.Mapping, mapping)
     counter = context.getCounter("ivory", RenameJob.Keys.MapCounter)
+    setupSplitFormat(context, split)
   }
+
+  def setupSplitFormat(context: MapperContext, split: InputSplit): Unit
 
   override def map(key: K, value: BytesWritable, context: MapperContext): Unit = {
     converter.convert(fact, key, value)
@@ -71,16 +74,12 @@ abstract class RenameMapper[K <: Writable] extends CombinableMapper[K, BytesWrit
 }
 
 class RenameV1Mapper extends RenameMapper[NullWritable] {
-  override def setupSplit(context: MapperContext, split: InputSplit): Unit = {
-    super.setupSplit(context, split)
+  override def setupSplitFormat(context: MapperContext, split: InputSplit): Unit =
     converter = PartitionFactConverter(partition)
-  }
 }
 class RenameV2Mapper extends RenameMapper[NullWritable] {
-  override def setupSplit(context: MapperContext, split: InputSplit): Unit = {
-    super.setupSplit(context, split)
+  override def setupSplitFormat(context: MapperContext, split: InputSplit): Unit =
     converter = PartitionFactConverter(partition)
-  }
 }
 
 class RenameReducer extends Reducer[BytesWritable, BytesWritable, NullWritable, BytesWritable] {
