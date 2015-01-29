@@ -85,7 +85,7 @@ object SquashJob {
     }
   } yield ret
 
-  def initChordJob(repo: Repository, conf: Configuration, chord: Entities, chordOutput: ChordOutput): RIO[(Job, MrContext, Int)] = {
+  def initChordJob(conf: Configuration, chord: Entities, chordOutput: ChordOutput): RIO[(Job, MrContext, Int)] = {
     val input = chordOutput.location.hdfsPath
     for {
       // This is about the best we can do at the moment, until we have more size information about each feature

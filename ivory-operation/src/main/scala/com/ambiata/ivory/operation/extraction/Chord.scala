@@ -29,7 +29,7 @@ object Chord {
     out      <- createChordRaw(repository, flags, entities, commit, takeSnapshot)
     (o, dict) = out
     hr       <- repository.asHdfsRepository
-    job      <- SquashJob.initChordJob(hr, hr.configuration, entities, o)
+    job      <- SquashJob.initChordJob(hr.configuration, entities, o)
     // We always need to squash because the entities need to be rewritten, which is _only_ handled by squash
     // This can technically be optimized to do the entity rewriting in the reducer - see the Git history for an example
     r        <- SquashJob.squash(repository, dict, config, job, cluster)
