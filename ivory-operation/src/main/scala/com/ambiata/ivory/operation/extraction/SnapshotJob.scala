@@ -180,7 +180,7 @@ abstract class SnapshotFactsetMapper[K <: Writable] extends CombinableMapper[K, 
   /** The format the mapper is reading from, set once per mapper from the subclass */
   val format: FactsetFormat
 
-  override def setupSplit(context: MapperContext[K], split: InputSplit): Unit = {
+  final override def setupSplit(context: MapperContext[K], split: InputSplit): Unit = {
     ctx = MrContext.fromConfiguration(context.getConfiguration)
     strDate = context.getConfiguration.get(SnapshotJob.Keys.SnapshotDate)
     date = Date.fromInt(strDate.toInt).getOrElse(Crash.error(Crash.DataIntegrity, s"Invalid snapshot date '${strDate}'"))
@@ -192,7 +192,10 @@ abstract class SnapshotFactsetMapper[K <: Writable] extends CombinableMapper[K, 
     dropCounter = MrCounter("ivory", "drop", context)
     ctx.thriftCache.pop(context.getConfiguration, SnapshotJob.Keys.FeatureIdLookup, featureIdLookup)
     emitter = MrContextEmitter(context)
+    setupSplitFormat(context, split)
   }
+
+  def setupSplitFormat(context: MapperContext[K], split: InputSplit): Unit
 
   /**
    * Map over thrift factsets, dropping any facts in the future of `date`
@@ -210,18 +213,14 @@ abstract class SnapshotFactsetMapper[K <: Writable] extends CombinableMapper[K, 
 class SnapshotV1FactsetMapper extends SnapshotFactsetMapper[NullWritable] {
   import SnapshotMapper._
   val format: FactsetFormat = FactsetFormat.V1
-  override def setupSplit(context: MapperContext[NullWritable], split: InputSplit): Unit = {
-    super.setupSplit(context, split)
+  override def setupSplitFormat(context: MapperContext[NullWritable], split: InputSplit): Unit =
     converter = PartitionFactConverter(partition)
-  }
 }
 class SnapshotV2FactsetMapper extends SnapshotFactsetMapper[NullWritable] {
   import SnapshotMapper._
   val format: FactsetFormat = FactsetFormat.V2
-  override def setupSplit(context: MapperContext[NullWritable], split: InputSplit): Unit = {
-    super.setupSplit(context, split)
+  override def setupSplitFormat(context: MapperContext[NullWritable], split: InputSplit): Unit =
     converter = PartitionFactConverter(partition)
-  }
 }
 
 object SnapshotFactsetMapper {
@@ -286,10 +285,10 @@ abstract class SnapshotIncrementalMapper[K <: Writable] extends CombinableMapper
     okCounter = MrCounter("ivory", "snapshot.incr.ok", context)
     dropCounter = MrCounter("ivory", "drop", context)
     emitter = MrContextEmitter(context)
-    setupMapper(context, split)
+    setupSplitFormat(context, split)
   }
 
-  def setupMapper(context: MapperContext[K], split: InputSplit): Unit
+  def setupSplitFormat(context: MapperContext[K], split: InputSplit): Unit
 
   override def map(key: K, value: BytesWritable, context: MapperContext[K]): Unit = {
     SnapshotIncrementalMapper.map(fact, key, value, Priority.Max, kout, vout, emitter, okCounter, dropCounter, serializer, featureIdLookup, converter)
@@ -298,18 +297,14 @@ abstract class SnapshotIncrementalMapper[K <: Writable] extends CombinableMapper
 
 class SnapshotV1IncrementalMapper extends SnapshotIncrementalMapper[NullWritable] {
   import SnapshotMapper._
-  override def setupMapper(context: MapperContext[NullWritable], split: InputSplit): Unit = {
-    super.setupSplit(context, split)
+  override def setupSplitFormat(context: MapperContext[NullWritable], split: InputSplit): Unit =
     converter = MutableFactConverter()
-  }
 }
 
 class SnapshotV2IncrementalMapper extends SnapshotIncrementalMapper[IntWritable] {
   import SnapshotMapper._
-  override def setupMapper(context: MapperContext[IntWritable], split: InputSplit): Unit = {
-    super.setupSplit(context, split)
+  override def setupSplitFormat(context: MapperContext[IntWritable], split: InputSplit): Unit =
     converter = NamespaceDateFactConverter(Namespaces.fromSnapshotMr(split))
-  }
 }
 
 object SnapshotIncrementalMapper {
