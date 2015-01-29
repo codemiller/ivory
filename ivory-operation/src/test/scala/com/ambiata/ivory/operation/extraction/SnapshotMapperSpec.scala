@@ -21,7 +21,7 @@ SnapshotMapperSpec
 -----------
 
   SnapshotFactsetThriftMapper has correct key/value and count     $factset
-  SnapshotV1IncrementalMapper has correct key/value and count     $incremental
+  SnapshotIncrementalMapper has correct key/value and count       $incremental
 
 """
   def disjoint(a: List[Fact], b: List[Fact]): Boolean =
