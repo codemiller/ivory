@@ -91,14 +91,17 @@ abstract class DumpFactsFactsetMapper[K <: Writable] extends CombinableMapper[K,
   var partition: Partition = null
   var converter: MrFactConverter[K, BytesWritable] = null
 
-  override def setupSplit(context: Mapper[K, BytesWritable, NullWritable, Text]#Context, split: InputSplit): Unit = {
+  final override def setupSplit(context: Mapper[K, BytesWritable, NullWritable, Text]#Context, split: InputSplit): Unit = {
     val (id, p) = FactsetInfo.getBaseInfo(split)
     partition = p
     val source = s"Factset[${id.render}]"
     val entities = DumpFactsJob.read(context.getConfiguration, DumpFactsJob.Keys.Entities).toSet
     val attributes = DumpFactsJob.read(context.getConfiguration, DumpFactsJob.Keys.Attributes).toSet
     mapper = DumpFactsMapper(entities, attributes, source)
+    setupSplitFormat(context, split)
   }
+
+  def setupSplitFormat(context: Mapper[K, BytesWritable, NullWritable, Text]#Context, split: InputSplit): Unit
 
   override def map(key: K, value: BytesWritable, context: Mapper[K, BytesWritable, NullWritable, Text]#Context): Unit = {
     converter.convert(fact, key, value)
@@ -110,15 +113,13 @@ abstract class DumpFactsFactsetMapper[K <: Writable] extends CombinableMapper[K,
 }
 
 class DumpFactsV1FactsetMapper extends DumpFactsFactsetMapper[NullWritable] {
-  override def setupSplit(context: Mapper[NullWritable, BytesWritable, NullWritable, Text]#Context, split: InputSplit): Unit = {
-    super.setupSplit(context, split)
+  override def setupSplitFormat(context: Mapper[NullWritable, BytesWritable, NullWritable, Text]#Context, split: InputSplit): Unit = {
     converter = PartitionFactConverter(partition)
   }
 }
 
 class DumpFactsV2FactsetMapper extends DumpFactsFactsetMapper[NullWritable] {
-  override def setupSplit(context: Mapper[NullWritable, BytesWritable, NullWritable, Text]#Context, split: InputSplit): Unit = {
-    super.setupSplit(context, split)
+  override def setupSplitFormat(context: Mapper[NullWritable, BytesWritable, NullWritable, Text]#Context, split: InputSplit): Unit = {
     converter = PartitionFactConverter(partition)
   }
 }
